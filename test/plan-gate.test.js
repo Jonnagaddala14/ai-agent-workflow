@@ -74,6 +74,8 @@ test("shell commands that write project files are blocked", () => {
     "find . -name '*.tmp' -delete",
     "find src -name '*.js' -exec rm {} +",
     "xargs rm < files.txt",
+    "xargs -i rm {} < files.txt",
+    "xargs -I{} rm {} < files.txt",
     "patch -p1 < fix.diff",
   ]) {
     assert.equal(run(root, { command }).status, 2, command);

@@ -136,7 +136,7 @@ It never touches `.agent-workflow/STANDARDS.md` or `.agent-workflow/plans/`. Ins
 
 Line-ending differences (Windows CRLF) don't count as edits. The always-loaded entry files are regenerated from `.agent-workflow/AGENT_WORKFLOW.md`, so to change the core rules, edit that file and re-run the installer.
 
-If you move or rename the repo folder, re-run the installer once: both hook entries hold the repo's absolute path. On macOS and Linux they also hold the absolute path of the `node` that ran the installer (an editor started from the dock often lacks nvm or Homebrew on its PATH, and then the hook would silently not run), so re-run it after removing or switching that Node version too.
+If you move or rename the repo folder, re-run the installer once: both hook entries hold the repo's absolute path. On macOS and Linux they also hold the absolute path of `node` (an editor started from the dock often lacks nvm or Homebrew on its PATH, and then the hook would silently not run). The installer writes the PATH entry (`/opt/homebrew/bin/node`, which survives `brew upgrade node`) rather than the versioned file behind it; with nvm it's that version's path, so re-run the installer after switching or removing that version.
 
 Then, in the repo:
 1. Run `/wf-standards` once, resolve the "Decisions needed", and approve. (Or just run `/wf <requirement>`: it offers this step when `STANDARDS.md` is missing.)

@@ -36,15 +36,22 @@ const kindOf = (s) => {
   if (s.command) return "stdio";
   return "unknown";
 };
-// Package runners: the package they start names the server (the first non-flag argument, or the value of -p/--package)
+// Package runners: the package they start names the server. Only flags known to take no value may come before it;
+// any other flag could be `--token <secret>`, and then no hint is printed at all.
 const RUNNERS = /^(npx|pnpx|bunx|uvx|pipx|dlx|pnpm|yarn)$/i;
 const PACKAGE = /^(@[\w.-]+\/)?[\w.-]+(@[\w.^~<>=*-]+)?$/;
+const NO_VALUE_FLAGS = /^(-y|--yes|-q|--quiet|-s|--silent|--no-install|--prefer-offline|--prefer-online|--no|--isolated|--refresh|--offline)$/;
 const packageOf = (args) => {
   if (!Array.isArray(args)) return "";
   const a = args.map(String);
-  const k = a.findIndex((w) => w === "-p" || w === "--package");
-  const pkg = k >= 0 ? a[k + 1] : a.find((w) => !w.startsWith("-") && !/^(run|dlx|exec)$/.test(w));
-  return pkg && PACKAGE.test(pkg) ? pkg : "";
+  for (let i = 0; i < a.length; i++) {
+    const w = a[i];
+    if (w === "-p" || w === "--package" || w === "--from") return PACKAGE.test(a[i + 1] || "") ? a[i + 1] : "";
+    if (NO_VALUE_FLAGS.test(w) || /^(run|dlx|exec)$/.test(w)) continue;
+    if (w.startsWith("-")) return "";
+    return PACKAGE.test(w) ? w : "";
+  }
+  return "";
 };
 // A hint that helps the agent guess what the server is for, without exposing other arguments or tokens
 const hintOf = (s) => {
@@ -86,7 +93,7 @@ for (const [rel, tool] of FILES) {
 }
 
 if (!found.length && !unreadable.length) {
-  console.log("MCP servers configured in this repo: none. Sources: none, unless the user connects one.");
+  console.log("MCP servers configured in this repo: none. Use any tracker or design tools you already have connected; otherwise Sources: none.");
 } else {
   console.log(`MCP servers configured in this repo (${found.length}):`);
   console.log(found.join("\n") || "- none readable");

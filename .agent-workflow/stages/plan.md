@@ -1,7 +1,7 @@
 # Stage: Plan (sources → understand → context → plan → consent)
 
 1. **Sources and work item:**
-   - Run `node .agent-workflow/scripts/mcp-servers.js`. It lists the MCP servers the repo configures (names and kind only, never secrets). For each, note whether its tools are available to you now.
+   - Run `node .agent-workflow/scripts/mcp-servers.js`. It lists the MCP servers the repo configures (names and kind only, never secrets). For each, note whether its tools are available to you now. Also use any tracker or design tools you already have connected (user-level MCP servers), even if the script lists none.
    - Configured but not connected: tell the user once, one line per server, how to connect (VS Code: `MCP: List Servers` → start; Claude Code: `/mcp` or `claude mcp add`). Don't read the config's env values or headers, and don't retry.
    - No requirement given, or the user asked for "the next ticket": if a tracker is connected, list the user's open items with a filter (at most 10: key + title) and ask which one to work on. If none is connected, ask for the requirement.
    - Ticket key or design link given: read it with field filters (summary, description, acceptance criteria, linked design). If its server isn't connected, ask the user to connect it or paste the content. Don't guess at its contents.

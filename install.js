@@ -72,12 +72,22 @@ const toPosix = (p) => p.split(path.sep).join("/");
 const HOOK_MATCHER = "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell";
 // One hook command for both tools, with the script's absolute path (the Copilot harness has no project-dir variable
 // and may run hooks from another cwd; `$VAR` only expands in sh-like shells). On Windows, bare `node`: a quoted
-// node.exe path is a parse error in PowerShell. Elsewhere, this node's absolute path: an editor started from the
-// dock often lacks nvm/Homebrew on its PATH, and a missing `node` there fails silently. Both hook files are local.
-const NODE = process.platform === "win32" ? "node" : `"${process.execPath}"`;
+// node.exe path is a parse error in PowerShell. Elsewhere, node's absolute path: an editor started from the dock often
+// lacks nvm/Homebrew on its PATH, and a missing `node` there fails silently. The PATH entry (`/opt/homebrew/bin/node`)
+// is preferred over process.execPath, which is the resolved, versioned file that a `brew upgrade node` deletes.
+function nodePath() {
+  if (process.platform === "win32") return "node";
+  try {
+    const found = execFileSync("/bin/sh", ["-c", "command -v node"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    if (found.startsWith("/") && fs.existsSync(found)) return found;
+  } catch {}
+  return process.execPath;
+}
+const NODE_PATH = nodePath();
+const NODE = NODE_PATH === "node" ? "node" : `"${NODE_PATH}"`;
 const HOOK_COMMAND = `${NODE} "${toPosix(path.join(T, DIR, "hooks", "plan-gate.js"))}"`;
 // These would be expanded or end the quoted path inside the hook command, in PowerShell and in sh
-if (!flag("--uninstall") && [T, process.platform === "win32" ? "" : process.execPath].some((p) => /[$`"]/.test(p))) {
+if (!flag("--uninstall") && [T, NODE_PATH].some((p) => /[$`"]/.test(p))) {
   fail(`The repo path (or node's path) contains $, \` or ", which breaks the hook command. Move the repo to a plain path.`);
 }
 // The plan-gate hook entry merged into the target's .claude/settings.local.json
@@ -281,6 +291,8 @@ for (const src of walk(`${DIR}/agents`).filter((f) => f.endsWith(".md"))) {
   }
 }
 // The Copilot hook file is generated per repo (absolute script path), so it goes through copy() like the files above.
+// Format checked against the VS Code "agent hooks" docs (2026-10): `PreToolUse` is a supported alias of `preToolUse`
+// (the hook reads both payload shapes), and `command` is the cross-platform fallback for `bash`/`powershell`.
 const COPILOT_HOOK_FILE = ".github/hooks/wf-plan-gate.json";
 if (copilot) {
   const cfg = { version: 1, hooks: { PreToolUse: [{ type: "command", matcher: HOOK_MATCHER, command: HOOK_COMMAND, timeoutSec: 10 }] } };

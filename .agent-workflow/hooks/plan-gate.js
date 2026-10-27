@@ -107,7 +107,8 @@ function shellTarget(command, cwd, inProject, depth = 0) {
     if (name === "xargs") {
       // The files come from stdin, so any writer run through xargs in the project counts
       let j = 0;
-      while (j < rest.length && rest[j].startsWith("-")) j += /^-[IinPLdEsa]$/.test(rest[j]) ? 2 : 1;
+      // GNU -i takes its value attached (-i{}), so only -I and the others skip a word
+      while (j < rest.length && rest[j].startsWith("-")) j += /^-[InPLdEsa]$/.test(rest[j]) ? 2 : 1;
       const inner = path.basename(rest[j] || "").toLowerCase().replace(/\.exe$/, "");
       const writes = WRITERS.has(inner) || ((inner === "sed" || inner === "perl") && rest.some((w) => /^-\w*i/.test(w)));
       if (writes && inProject(cwd)) return `xargs ${inner}`;

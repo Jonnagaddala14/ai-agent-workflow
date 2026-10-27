@@ -98,6 +98,19 @@ test("mcp-servers lists names and kinds from each tool's config, never secrets",
   assert.match(out, /Could not parse: \.cursor\/mcp\.json/);
   assert.doesNotMatch(out, /s3cret|t0ken|Bearer/);
   assert.match(script(repo(), "mcp-servers.js").stdout, /none/);
+  // A flag's value is never mistaken for the package name
+  const leaky = repo({
+    ".mcp.json": JSON.stringify({ mcpServers: {
+      jira: { command: "npx", args: ["--token", "s3cr3tTOKEN", "mcp-atlassian"] },
+      git: { command: "uvx", args: ["-q", "--from", "mcp-server-git", "serve"] },
+      docs: { command: "npx", args: ["-y", "-p", "@org/docs-mcp", "docs-mcp", "--key", "k3y"] },
+    } }),
+  });
+  const out2 = script(leaky, "mcp-servers.js").stdout;
+  assert.match(out2, /- jira \(stdio, command npx\)/);
+  assert.match(out2, /- git \(stdio, command uvx mcp-server-git\)/);
+  assert.match(out2, /- docs \(stdio, command npx @org\/docs-mcp\)/);
+  assert.doesNotMatch(out2, /s3cr3t|k3y|\bserve\b/);
 });
 
 test("pr-threads shows review summaries on the head only, unless --all", () => {

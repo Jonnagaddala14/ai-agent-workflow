@@ -46,7 +46,8 @@ test("fresh install writes the kit, entry files, hook, ignore rules and manifest
   assert.equal(copilotHook.matcher, hook.matcher);
   // Same command in both: node (bare on Windows, absolute elsewhere) + absolute canonical script path with forward slashes
   assert.equal(copilotHook.command, hook.hooks[0].command);
-  const node = process.platform === "win32" ? "node" : `"${process.execPath}"`;
+  const node = process.platform === "win32" ? "node" : `"${hook.hooks[0].command.match(/^"([^"]+)"/)[1]}"`;
+  if (process.platform !== "win32") assert.ok(fs.existsSync(node.slice(1, -1)), node);
   assert.equal(copilotHook.command, `${node} "${fs.realpathSync.native(dir).replace(/\\/g, "/")}/.agent-workflow/hooks/plan-gate.js"`);
   assert.match(read(dir, ".git/info/exclude"), /# ai-agent-workflow:start[\s\S]*\/\.agent-workflow\/\*[\s\S]*\/\.github\/agents\/wf\*\.agent\.md/);
   assert.equal(execFileSync("git", ["-C", dir, "status", "--porcelain"], { encoding: "utf8" }), "");
