@@ -12,8 +12,9 @@ Fewer always-loaded tokens, a tighter hook, and an installer that can preview an
   - Requires Node.js 20+, and says so. Refuses repo paths with `$`, a backtick or a quote, which break the hook command.
   - On macOS and Linux the hook command uses node's absolute path, so a dock-launched editor without nvm/Homebrew on its PATH still runs the hook. Re-run the installer after switching Node versions.
   - The 0.1.0 / 0.2.0 refusal paths are gone (no pilot repo uses them).
-- **Scripts:** `pr-threads.js --fetch` falls back to `gh pr diff` in shallow clones; `--reply` lets `gh` read the body from the file, so long replies work on Windows. `repo-map.js` caps its git log and skips unreadable folders. `mcp-servers.js` shows the package a runner starts (`command npx figma-mcp`).
-- **Kit repo:** `package.json` (Node 20+, `npm test`), `.gitignore`, CI on macOS too and on Node 24, and tests that `VERSION`, `package.json` and this changelog agree and that every `.agent-workflow/` path the docs mention exists. A full install is now 35 kit files (Claude-only 24, Copilot-only 26).
+- **Scripts:** every script prints `<script>: <message>` on an unexpected error, not a stack trace. `pr-threads.js --fetch` falls back to `gh pr diff` in shallow clones; `--reply` lets `gh` read the body from the file, so long replies work on Windows. `repo-map.js` caps its git log and skips unreadable folders. `mcp-servers.js` shows the package a runner starts (`command npx figma-mcp`).
+- README: the Copilot harness denies a tool call when the hook can't run (Claude Code lets it through), and what to check then.
+- **Kit repo:** `package.json` (Node 20+, `npm test`), `.gitignore`, CI on macOS too and on Node 24, and tests that `VERSION`, `package.json` and this changelog agree and that every `.agent-workflow/` path the docs mention exists. A full install is now 36 kit files (Claude-only 25, Copilot-only 27). The entry-file list lives once, in `scripts/kit-files.js`, shared by the installer's ignore rules and `repo-map.js`.
 
 ## 0.5.1 — 2026-10-27 (pilot)
 Fixes from the first Windows pilot (a .NET repo in a path with spaces).

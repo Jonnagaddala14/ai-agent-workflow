@@ -45,6 +45,7 @@ Everything lives in one folder, `.agent-workflow/`, except the small entry files
 | `STANDARDS.md` (generated, per repo) | Plan, Implement, Review, Fix (relevant sections only) | The repo's architecture and coding rules, inferred from the code with evidence, approved by you |
 | `plans/` (generated, per task) | each stage | Plan, review, PR-comments and reply files: the handoffs between stages |
 | `scripts/repo-map.js` | Standards stage | Compact repo summary (areas, file types, configs, docs, hotspots) so the agent samples files instead of reading them all. Monorepo packages and modules with their own manifest are separate areas; lock files, generated code and the kit's own files are left out (needs Node.js) |
+| `scripts/kit-files.js` | installer, `repo-map.js` | The list of the kit's entry files outside `.agent-workflow/`, shared by the ignore rules and the repo map |
 | `scripts/mcp-servers.js` | Plan stage | Lists the MCP servers the repo configures (`.vscode/mcp.json`, `.mcp.json`, `.cursor/mcp.json`, `.github/copilot/mcp.json`, …): names and transport only, never env values or headers. The agent compares the list with the tools it has, tells you how to connect the rest, and can pick a work item from a connected tracker (needs Node.js) |
 | `scripts/snapshot.js` | Plan approval, before each fix round, at review time | Records the whole working tree, including new untracked files, as a git snapshot without touching your staging area. Reviews diff two snapshots, so new files are included and fix checks see only the fixes (needs git + Node.js) |
 | `scripts/pr-threads.js` | Fix stage (PRs) | Prints only the unresolved PR comment threads, one line each, plus review summaries on the current head commit (`--all` for older ones). `--fetch <n>` fetches a PR for review without checking it out. After your consent, `--reply <threadId> <file>` replies in a thread (the text comes from a file, so quotes are safe in any shell) and `--resolve <threadId>` resolves it (needs `gh` + Node.js) |
@@ -111,7 +112,7 @@ Ticket text, design notes and MCP results are treated as data, not instructions;
 node install.js <path-to-repo> [--claude-only | --copilot-only] [--gitignore] [--force] [--dry-run]
 node install.js <path-to-repo> --uninstall [--force] [--dry-run]
 ```
-A full install (both tools) adds 37 files: 16 in `.agent-workflow/` (including the manifest), 10 Claude Code entry files and 11 Copilot entry files. `--claude-only` adds 26 and `--copilot-only` adds 27.
+A full install (both tools) adds 38 files: 17 in `.agent-workflow/` (including the manifest), 10 Claude Code entry files and 11 Copilot entry files. `--claude-only` adds 27 and `--copilot-only` adds 28.
 
 The installer:
 - Copies the kit into `.agent-workflow/` and the entry files into `.claude/` and `.github/`.
@@ -146,7 +147,7 @@ Then, in the repo:
 - The per-stage prompts (`/wf-plan`, `/wf-implement`, …) still exist for running stages one at a time. Run each in a **new chat**; they set Agent mode, because every stage writes files or runs scripts.
   - The frontmatter uses `agent: agent`. On older VS Code versions that still use `mode:`, change it to `mode: agent`.
 - Copilot sub-agents are one-shot: they can't be resumed with an answer. So the orchestrator applies fixes itself and spawns a reviewer only for a first review or a must-fix check.
-- The plan gate runs through `.github/hooks/wf-plan-gate.json` (Copilot harness, preview). If your VS Code doesn't run hooks yet, the gate relies on the rules alone. If a tool call is denied with "hook errored" (the hook crashed, rather than deciding), check the hook output in the Output panel, run `echo {} | node .agent-workflow/hooks/plan-gate.js` in the repo to confirm Node and the script path work (it should print nothing and exit 0), and reload the window after any hook config change.
+- The plan gate runs through `.github/hooks/wf-plan-gate.json` (Copilot harness, preview). If your VS Code doesn't run hooks yet, the gate relies on the rules alone. The two tools treat a hook that fails differently: Claude Code lets the tool call through, but the Copilot harness **denies** it. The hook catches its own errors and lets the call through, but if it can't start at all (`node` missing, or a Node.js older than 14 that can't parse it), every edit and shell command in Copilot is denied with "hook errored". Then check the hook output in the Output panel, run `echo {} | node .agent-workflow/hooks/plan-gate.js` in the repo to confirm Node and the script path work (it should print nothing and exit 0), and reload the window after any hook config change.
 - VS Code also lists Claude-format agents from `.claude/agents/`. With both tools installed you may see `wf-implementer` twice in diagnostics; they behave the same.
 
 ## Known limitations

@@ -32,7 +32,7 @@ test("fresh install writes the kit, entry files, hook, ignore rules and manifest
   assert.equal(m.version, VERSION);
   assert.deepEqual(m.skipped, []);
   assert.equal(m.partial, undefined);
-  assert.equal(Object.keys(m.files).length, 35);
+  assert.equal(Object.keys(m.files).length, 36);
   for (const rel of [".agent-workflow/AGENT_WORKFLOW.md", ".agent-workflow/scripts/mcp-servers.js", ".claude/commands/wf.md",
     ".claude/rules/agent-workflow.md", ".claude/agents/wf-reviewer.md", ".github/prompts/wf.prompt.md", ".github/prompts/wf-plan.prompt.md",
     ".github/agents/wf.agent.md", ".github/agents/wf-implementer.agent.md", ".github/agents/wf-reviewer.agent.md",
@@ -122,14 +122,14 @@ test("single-tool installs leave the other tool out", () => {
   install(a, "--claude-only");
   assert.ok(exists(a, ".claude/commands/wf.md"));
   assert.ok(!exists(a, ".github"));
-  assert.equal(Object.keys(manifest(a).files).length, 24);
+  assert.equal(Object.keys(manifest(a).files).length, 25);
   const b = repo();
   install(b, "--copilot-only");
   assert.ok(exists(b, ".github/prompts/wf-plan.prompt.md"));
   assert.ok(exists(b, ".github/agents/wf.agent.md"));
   assert.ok(exists(b, ".github/hooks/wf-plan-gate.json"));
   assert.ok(!exists(b, ".claude"));
-  assert.equal(Object.keys(manifest(b).files).length, 26);
+  assert.equal(Object.keys(manifest(b).files).length, 27);
   // A later --claude-only run on the same repo keeps the Copilot files
   install(b, "--claude-only");
   assert.ok(exists(b, ".github/agents/wf.agent.md"));

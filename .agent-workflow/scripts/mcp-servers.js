@@ -7,6 +7,10 @@
 const fs = require("fs");
 const path = require("path");
 
+process.on("uncaughtException", (e) => {
+  console.error(`mcp-servers: ${e.message}`);
+  process.exit(1);
+});
 const root = path.resolve(process.argv[2] || ".");
 // Repo-level config files, by tool. User-level files (~/.claude.json, VS Code user settings) aren't the repo's.
 const FILES = [

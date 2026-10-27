@@ -5,7 +5,12 @@
 const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const { isEntryFile } = require("./kit-files.js");
 
+process.on("uncaughtException", (e) => {
+  console.error(`repo-map: ${e.message}`);
+  process.exit(1);
+});
 const root = path.resolve(process.argv[2] || ".");
 // Without git, skip build output and dependencies. Files git tracks are intentional, so then skip only
 // vendored dependencies and the kit's folder.
@@ -22,8 +27,8 @@ const TEST = /(^|\/)(tests?|__tests__|spec|androidTest|test-?utils?|[^/]*[._-](u
 const PROJECT = /^(package\.json|deno\.jsonc?|build\.gradle(\.kts)?|pom\.xml|build\.sbt|go\.mod|Cargo\.toml|pyproject\.toml|setup\.py|mix\.exs|composer\.json|Gemfile|pubspec\.yaml|Package\.swift|manifest|bsconfig\.json|.*\.(cs|fs|vb)proj)$/i;
 // Lock files and generated code are poor samples
 const NOISE = /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|deno\.lock|.*\.lock|.*\.lockfile|go\.sum|packages\.lock\.json|pubspec\.lock|project\.pbxproj|.*\.xcworkspacedata)$|\.min\.(js|css)$|\.(g|designer)\.cs$|\.generated\.|\.(freezed|g|pb|pbobjc)\.(dart|go|swift|js|ts|py|m)$|_pb2\.py$|(^|\/)Migrations\//i;
-// The kit's entry files and agent settings, so they don't show up as areas or samples of the project
-const KIT = /^(\.claude\/settings(\.local)?\.json|\.claude\/commands\/wf[\w-]*\.md|\.claude\/agents\/wf-[\w-]*\.md|\.claude\/rules\/agent-workflow\.md|\.github\/prompts\/wf[\w-]*\.prompt\.md|\.github\/agents\/wf[\w-]*\.agent\.md|\.github\/hooks\/wf-plan-gate\.json|\.github\/instructions\/agent-workflow\.instructions\.md)$/;
+// The kit's entry files and the team's Claude settings, so they don't show up as areas or samples of the project
+const KIT = (f) => isEntryFile(f) || f === ".claude/settings.json";
 
 const sh = (cmd, args) => {
   if (cmd === "git") args = ["-c", "core.quotePath=false", ...args]; // print non-ASCII paths as-is
@@ -62,7 +67,7 @@ const inc = (m, k) => m.set(k, (m.get(k) || 0) + 1);
 
 const listed = listFiles();
 const git = listed.git;
-const files = listed.files.filter((f) => !KIT.test(f));
+const files = listed.files.filter((f) => !KIT(f));
 const out = [`Repo: ${path.basename(root)} — ${files.length} files${git ? "" : " (not a git repo)"}`];
 
 // Area = deepest directory (depth ≤ 4) with a project manifest, else the top-level directory

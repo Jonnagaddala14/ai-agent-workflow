@@ -338,17 +338,8 @@ if (claude) {
 }
 
 // Ignore everything the kit puts in the repo. Default: .git/info/exclude, which is local and never committed.
-const IGNORE = [
-  `/${DIR}/*`,
-  "/.claude/commands/wf*.md",
-  "/.claude/agents/wf-*.md",
-  `/${RULES}`,
-  "/.claude/settings.local.json",
-  "/.github/prompts/wf*.prompt.md",
-  "/.github/agents/wf*.agent.md",
-  "/.github/hooks/wf-plan-gate.json",
-  `/${INSTR}`,
-];
+const { ENTRY_PATTERNS } = require(path.join(KIT, DIR, "scripts", "kit-files.js"));
+const IGNORE = [`/${DIR}/*`, ...ENTRY_PATTERNS];
 const BLOCK = `# ai-agent-workflow:start (managed by install.js)\n${IGNORE.join("\n")}\n# ai-agent-workflow:end\n`;
 const [useRel, otherRel] = flag("--gitignore") ? [".gitignore", excludeRel] : [excludeRel, ".gitignore"];
 if (!useRel) {
