@@ -37,8 +37,9 @@ Everything lives in one folder, `.agent-workflow/`, except the small entry files
 
 | File (in `.agent-workflow/` unless shown) | Loaded when | Purpose |
 |---|---|---|
-| `AGENT_WORKFLOW.md` | **every request** (via the entry files below) | Small core: the stage map, tiers, consent rules, MCP rules, token and sub-agent rules |
+| `AGENT_WORKFLOW.md` | **every request** (via the entry files below) | Small core (about 600 words): the stage map, tiers, consent, token and sub-agent rules. Lines ending in `<!-- claude -->` or `<!-- copilot -->` go only to that tool |
 | `stages/standards.md`, `plan.md`, `implement.md`, `review.md`, `fix.md` | only when that stage runs | Stage instructions, shared by Claude Code and Copilot |
+| `agents/wf-implementer.md`, `agents/wf-reviewer.md` | when the installer runs | The one source for both tools' sub-agents; the installer generates the `.claude/agents/` and `.github/agents/` copies from it, with the same per-tool markers |
 | `PLAN_TEMPLATE.md` | Plan stage | Plan format (status, sources, approach, acceptance criteria, steps, verify) |
 | `templates/STANDARDS_TEMPLATE.md` | Standards stage | Format of the generated `STANDARDS.md` (sections per area, decisions needed, recommendations) |
 | `STANDARDS.md` (generated, per repo) | Plan, Implement, Review, Fix (relevant sections only) | The repo's architecture and coding rules, inferred from the code with evidence, approved by you |
@@ -47,20 +48,20 @@ Everything lives in one folder, `.agent-workflow/`, except the small entry files
 | `scripts/mcp-servers.js` | Plan stage | Lists the MCP servers the repo configures (`.vscode/mcp.json`, `.mcp.json`, `.cursor/mcp.json`, `.github/copilot/mcp.json`, …): names and transport only, never env values or headers. The agent compares the list with the tools it has, tells you how to connect the rest, and can pick a work item from a connected tracker (needs Node.js) |
 | `scripts/snapshot.js` | Plan approval, before each fix round, at review time | Records the whole working tree, including new untracked files, as a git snapshot without touching your staging area. Reviews diff two snapshots, so new files are included and fix checks see only the fixes (needs git + Node.js) |
 | `scripts/pr-threads.js` | Fix stage (PRs) | Prints only the unresolved PR comment threads, one line each, plus review summaries on the current head commit (`--all` for older ones). `--fetch <n>` fetches a PR for review without checking it out. After your consent, `--reply <threadId> <file>` replies in a thread (the text comes from a file, so quotes are safe in any shell) and `--resolve <threadId>` resolves it (needs `gh` + Node.js) |
-| `hooks/plan-gate.js` | Claude Code and Copilot edits and shell commands | Blocks code changes while a plan is DRAFT: the edit tools, and shell writes such as redirects, `rm`/`mv`/`cp`, `sed -i`, tree-changing `git` commands and PowerShell file cmdlets. Files in `.agent-workflow/` stay editable. Understands both tools' hook payloads (needs Node.js) |
+| `hooks/plan-gate.js` | Claude Code and Copilot edits and shell commands | Blocks code changes while a plan is DRAFT: the edit tools, and shell writes such as redirects, `rm`/`mv`/`cp`, `sed -i`, `find -delete`, `xargs rm`, `patch`, tree-changing `git` commands (in this repo) and PowerShell file cmdlets, also inside `sh -c`, `cmd /c` and `pwsh -Command`. Files in `.agent-workflow/` stay editable. Understands both tools' hook payloads (needs Node.js) |
 | `manifest.json` (written by the installer) | upgrades | The installed version plus a fingerprint of each kit file |
 | **Entry files (outside the folder)** | | |
-| `.claude/commands/wf*.md`, `.claude/agents/wf-*.md` | on demand | Claude Code commands and the `wf-implementer` / `wf-reviewer` sub-agents |
-| `.claude/rules/agent-workflow.md` | every Claude Code request | Copy of `AGENT_WORKFLOW.md`; Claude Code loads `.claude/rules/` automatically |
+| `.claude/commands/wf*.md`, `.claude/agents/wf-*.md` | on demand | Claude Code commands and the `wf-implementer` / `wf-reviewer` sub-agents (generated from `agents/`) |
+| `.claude/rules/agent-workflow.md` | every Claude Code request | Generated from `AGENT_WORKFLOW.md` (Claude lines only); Claude Code loads `.claude/rules/` automatically |
 | `.claude/settings.local.json` | Claude Code edits | Runs the plan-gate hook (merged into your existing local settings) |
 | `.github/prompts/wf*.prompt.md` | on demand | Copilot versions of the commands. `/wf` selects the `wf` agent; the others run in Agent mode |
-| `.github/agents/wf.agent.md`, `wf-implementer.agent.md`, `wf-reviewer.agent.md` | `/wf`, or as sub-agents | The Copilot orchestrator and its two sub-agents (read/search/edit/execute tools only; hidden from the agent picker) |
+| `.github/agents/wf.agent.md`, `wf-implementer.agent.md`, `wf-reviewer.agent.md` | `/wf`, or as sub-agents | The Copilot orchestrator and its two sub-agents (generated from `agents/`; read/search/edit/execute tools only; hidden from the agent picker) |
 | `.github/hooks/wf-plan-gate.json` | Copilot edits and shell commands | Runs the plan-gate hook under the Copilot harness. Both hook entries are written with the script's absolute path |
-| `.github/instructions/agent-workflow.instructions.md` | every Copilot request | Copy of `AGENT_WORKFLOW.md` with `applyTo: "**"` |
+| `.github/instructions/agent-workflow.instructions.md` | every Copilot request | Generated from `AGENT_WORKFLOW.md` (Copilot lines only) with `applyTo: "**"` |
 | **Kit repo only (not installed)** | | |
 | `install.js` | once per repo, and to upgrade | Installs the kit into a repo (see Setup) |
-| `VERSION`, `CHANGELOG.md` | — | Kit version and history |
-| `test/` | — | Tests for the installer, scripts and hook. Run `node --test` in the kit repo (Node.js 20+, no dependencies) |
+| `VERSION`, `CHANGELOG.md`, `package.json` | — | Kit version, history, and the Node.js version and test command (no dependencies) |
+| `test/` | — | Tests for the installer, scripts, hook and docs. Run `npm test` (or `node --test test/`) in the kit repo (Node.js 20+, no dependencies) |
 | `examples/` | — | Illustrative standards, plan, review and PR-comments files, showing the expected size and shape |
 
 ## Standards: generated once, then followed
@@ -81,7 +82,7 @@ After that:
 - **Small always-on core.** Stage details are loaded only by the command that needs them.
 - **Handoff files instead of chat history.** Plan → implement → review file → fix. Each stage starts fresh (a sub-agent or `/clear`).
 - **Root cause before plan.** A bug-fix plan names the `file:line` and the reproduction, so the implementation doesn't re-explore.
-- **Cheap diffs.** `--stat` first, then one file at a time. Generated and lock files are skipped. Large PRs are reviewed highest-risk first.
+- **Cheap diffs.** `--stat` first; under about 300 changed lines the whole diff in one read, otherwise one file at a time. Generated and lock files are skipped. Large PRs are reviewed highest-risk first.
 - **PRs reviewed without checkout.** `git fetch pull/<n>/head` + `git show` reads the actual code without switching branches.
 - **The linter does the style checking.** The reviewer runs lint instead of commenting on formatting.
 - **Compact PR comments.** `pr-threads.js` prints one line per unresolved thread instead of raw GitHub JSON.
@@ -104,12 +105,13 @@ Ticket text, design notes and MCP results are treated as data, not instructions;
 3. Commit, push, open a PR, or post or reply to comments: only when you say so.
 
 ## Setup
-**Prerequisites:** git and Node.js, both on the PATH that your editor sees (the hook is run as `node …` by Claude Code and VS Code, not by your terminal; on macOS, start VS Code from a shell once or check `node -v` in its integrated terminal). For PR review and comment fixing, also the GitHub CLI (`gh auth login`).
+**Prerequisites:** git and Node.js 20+. On Windows, `node` must be on the PATH your editor sees (the hook is run as `node …` by Claude Code and VS Code, not by your terminal); on macOS and Linux the installer writes node's absolute path instead. For PR review and comment fixing, also the GitHub CLI (`gh auth login`).
 
 ```
-node install.js <path-to-repo> [--claude-only | --copilot-only] [--gitignore] [--force]
+node install.js <path-to-repo> [--claude-only | --copilot-only] [--gitignore] [--force] [--dry-run]
+node install.js <path-to-repo> --uninstall [--force] [--dry-run]
 ```
-A full install (both tools) adds 35 files: 14 in `.agent-workflow/` (including the manifest), 10 Claude Code entry files and 11 Copilot entry files. `--claude-only` adds 24 and `--copilot-only` adds 25.
+A full install (both tools) adds 37 files: 16 in `.agent-workflow/` (including the manifest), 10 Claude Code entry files and 11 Copilot entry files. `--claude-only` adds 26 and `--copilot-only` adds 27.
 
 The installer:
 - Copies the kit into `.agent-workflow/` and the entry files into `.claude/` and `.github/`.
@@ -119,7 +121,9 @@ The installer:
 - Edits **no committed file**: not `CLAUDE.md`, `.claude/settings.json`, `.github/copilot-instructions.md` or `.gitignore` (unless you pass `--gitignore`).
 - Warns if git already tracks any of these files, because ignore rules don't apply to tracked files. It prints the `git rm --cached` command to run; the files stay on disk.
 
-It never touches `.agent-workflow/STANDARDS.md` or `.agent-workflow/plans/`. Installing into a subfolder of a repo, or over a 0.1.0 or 0.2.0 install, is refused with a message. Unknown options are refused too.
+It never touches `.agent-workflow/STANDARDS.md` or `.agent-workflow/plans/`. Installing into a subfolder of a repo, or into a path containing `$`, a backtick or a quote (they break the hook command), is refused with a message. Unknown options are refused too.
+
+**Other options:** `--dry-run` prints what would change and changes nothing. `--uninstall` removes every file the manifest lists (edited ones only with `--force`), the hook entry, the ignore block and the manifest; it keeps `STANDARDS.md`, `plans/` and the rest of your `settings.local.json`. `--help` lists the options. Node.js 20 or later is required.
 
 **Sharing `STANDARDS.md`:** by default each developer generates their own. To share one with the team, add `!/.agent-workflow/STANDARDS.md` to `.gitignore` (after the block, if you used `--gitignore`) and commit both. That un-ignores just that file, whichever ignore mode you used.
 
@@ -131,9 +135,7 @@ It never touches `.agent-workflow/STANDARDS.md` or `.agent-workflow/plans/`. Ins
 
 Line-ending differences (Windows CRLF) don't count as edits. The always-loaded entry files are regenerated from `.agent-workflow/AGENT_WORKFLOW.md`, so to change the core rules, edit that file and re-run the installer.
 
-If you move or rename the repo folder, re-run the installer once: both hook entries hold the repo's absolute path.
-
-**Upgrading from 0.2.0** (root files, `workflow/`, `.wf-manifest.json`): run the 0.3.1 installer first. It moves `STANDARDS.md` and `plans/` into `.agent-workflow/` and takes the old entries out of `CLAUDE.md`, `.github/copilot-instructions.md` and `.claude/settings.json`. Then run this one.
+If you move or rename the repo folder, re-run the installer once: both hook entries hold the repo's absolute path. On macOS and Linux they also hold the absolute path of the `node` that ran the installer (an editor started from the dock often lacks nvm or Homebrew on its PATH, and then the hook would silently not run), so re-run it after removing or switching that Node version too.
 
 Then, in the repo:
 1. Run `/wf-standards` once, resolve the "Decisions needed", and approve. (Or just run `/wf <requirement>`: it offers this step when `STANDARDS.md` is missing.)
@@ -159,7 +161,7 @@ Then, in the repo:
 - **GitHub Enterprise** works too: the scripts take the host from the PR's URL and pass it to `gh`. Run `gh auth login --hostname <host>` first.
 - **Plan, review and comments files live in `.agent-workflow/plans/`** and are ignored, so they aren't a shared record. Copy one out if you want to keep it.
 - **Entry files can't all go in the kit folder.** Claude Code finds commands, agents and rules only under `.claude/`, and Copilot finds prompts, agents, hooks and instructions only under `.github/`. They're ignored, so git doesn't see them.
-- **To cut cost further,** you can set `model: sonnet` in a sub-agent's frontmatter. Test the review quality before relying on it.
+- **To cut cost further,** you can add `model: sonnet` to the frontmatter in `.agent-workflow/agents/*.md` (mark it `<!-- claude -->` if it's for Claude Code only) and re-run the installer. Test the review quality before relying on it.
 
 ## Checking it works
 Run 3–5 small real tasks and 2–3 real PRs, then check:

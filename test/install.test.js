@@ -78,6 +78,14 @@ test("the always-loaded core stays small", () => {
   assert.ok(words < 650, `AGENT_WORKFLOW.md has ${words} words`);
 });
 
+test("repo-map hides every entry file the installer writes", () => {
+  const dir = repo();
+  install(dir);
+  execFileSync("git", ["-C", dir, "add", "-f", "-A"]);
+  const out = spawnSync(process.execPath, [path.join(KIT, ".agent-workflow/scripts/repo-map.js"), dir], { encoding: "utf8" }).stdout;
+  assert.match(out, /— 0 files/);
+});
+
 test("re-running changes nothing", () => {
   const dir = repo();
   install(dir);

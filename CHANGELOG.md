@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.0 — 2026-10-27 (pilot)
+Fewer always-loaded tokens, a tighter hook, and an installer that can preview and uninstall. From a full code review.
+- **Smaller core.** `AGENT_WORKFLOW.md` is about 600 words (was about 800), loaded on every request. MCP details moved into the plan stage, sub-agent rules are condensed, and the stage table lost its Reads column. Lines ending in `<!-- claude -->` or `<!-- copilot -->` go only to that tool's generated copy. The core now states the one exception to "no sub-agents for small fix sets": in Claude Code's Full tier, fixes go to the resumed implementer.
+- **One source for the sub-agents.** `wf-implementer` and `wf-reviewer` live in `.agent-workflow/agents/`, and the installer generates the Claude Code and Copilot copies (they had drifted: the Claude reviewer lacked the 25-line cap). Reviewers now return the file path and findings only, not the whole review.
+- **Cheaper stages.** `/wf` (Claude Code) loads `standards.md` and `implement.md` only when needed. `PLAN_TEMPLATE.md` lost its comments, so plans don't carry them. Reviews read the whole diff at once when it's under about 300 lines. A Trivial task found at plan time deletes its DRAFT plan and is done directly.
+- **Plan gate:** unwraps `bash -c` / `sh -c`, handles `\"` inside double quotes, and gates `find -delete` / `-exec rm`, `xargs rm`, `patch`. `git -C <another repo>` and `sc query` (sc.exe) no longer count as writes. Path checks ignore case on macOS.
+- **Installer:**
+  - `--help`, `--dry-run` and `--uninstall` (removes what the manifest lists, the hook entry and the ignore block; keeps standards, plans and your other settings).
+  - A `settings.local.json` with an unexpected shape is skipped with a message instead of crashing. An unexpected error now prints `install.js: <message>` and still records what was installed.
+  - Requires Node.js 20+, and says so. Refuses repo paths with `$`, a backtick or a quote, which break the hook command.
+  - On macOS and Linux the hook command uses node's absolute path, so a dock-launched editor without nvm/Homebrew on its PATH still runs the hook. Re-run the installer after switching Node versions.
+  - The 0.1.0 / 0.2.0 refusal paths are gone (no pilot repo uses them).
+- **Scripts:** `pr-threads.js --fetch` falls back to `gh pr diff` in shallow clones; `--reply` lets `gh` read the body from the file, so long replies work on Windows. `repo-map.js` caps its git log and skips unreadable folders. `mcp-servers.js` shows the package a runner starts (`command npx figma-mcp`).
+- **Kit repo:** `package.json` (Node 20+, `npm test`), `.gitignore`, CI on macOS too and on Node 24, and tests that `VERSION`, `package.json` and this changelog agree and that every `.agent-workflow/` path the docs mention exists. A full install is now 35 kit files (Claude-only 24, Copilot-only 26).
+
 ## 0.5.1 — 2026-10-27 (pilot)
 Fixes from the first Windows pilot (a .NET repo in a path with spaces).
 - **Hook command.** Both hook entries (`.claude/settings.local.json` and `.github/hooks/wf-plan-gate.json`) are now written as `node "<repo>/.agent-workflow/hooks/plan-gate.js"`: bare `node`, because a quoted node.exe path is a parse error in PowerShell, and the absolute script path, because the Copilot harness has no project-dir variable and `$CLAUDE_PROJECT_DIR` only expands in sh-like shells. The hook also finds the repo from its own location when no project dir is given. Re-run the installer after moving a repo.
