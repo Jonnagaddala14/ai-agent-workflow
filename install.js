@@ -136,26 +136,48 @@ const pick = (dir, re) => walk(dir).filter((f) => re.test(path.posix.basename(f)
 const own = (f) => !/^\.agent-workflow\/(STANDARDS\.md|manifest\.json|plans\/)/.test(f);
 const kitFiles = [
   ...walk(DIR).filter(own),
-  ...(claude ? [...pick(".claude/commands", /^wf.*\.md$/), ...pick(".claude/agents", /^wf-.*\.md$/)] : []),
+  ...(claude ? pick(".claude/commands", /^wf.*\.md$/) : []),
   ...(copilot ? [...pick(".github/prompts", /^wf.*\.prompt\.md$/), ...pick(".github/agents", /^wf.*\.agent\.md$/)] : []),
 ];
 kitFiles.forEach((rel) => copy(rel));
 
-// The core rules, always loaded by each tool. Generated from the installed AGENT_WORKFLOW.md, so local edits to it
-// reach both tools on the next install.
-const core = read(path.join(T, DIR, "AGENT_WORKFLOW.md")).trim();
+// Lines ending in <!-- claude --> or <!-- copilot --> are kept only for that tool, without the marker
+const forTool = (text, tool) =>
+  text
+    .split(/\r?\n/)
+    .flatMap((l) => {
+      const m = l.match(/\s*<!-- (claude|copilot) -->\s*$/);
+      return !m ? [l] : m[1] === tool ? [l.slice(0, m.index)] : [];
+    })
+    .join("\n");
+// Generated files are built from the installed copies, so local edits to them reach both tools on the next install
+const installedText = (rel) => read(path.join(T, rel)) || read(path.join(KIT, rel));
+
+// The core rules, always loaded by each tool
+const core = installedText(`${DIR}/AGENT_WORKFLOW.md`).trim();
 const managed = "Managed by install.js: edit .agent-workflow/AGENT_WORKFLOW.md instead, then re-run the installer.";
 const RULES = ".claude/rules/agent-workflow.md";
 const INSTR = ".github/instructions/agent-workflow.instructions.md";
-if (claude) copy(RULES, Buffer.from(`<!-- ${managed} -->\n${core}\n`));
-if (copilot) copy(INSTR, Buffer.from(`---\napplyTo: "**"\ndescription: "${managed}"\n---\n${core}\n`));
+if (claude) copy(RULES, Buffer.from(`<!-- ${managed} -->\n${forTool(core, "claude")}\n`));
+if (copilot) copy(INSTR, Buffer.from(`---\napplyTo: "**"\ndescription: "${managed}"\n---\n${forTool(core, "copilot")}\n`));
+// The sub-agents, one source each in .agent-workflow/agents/
+const agentFiles = [];
+for (const src of walk(`${DIR}/agents`).filter((f) => f.endsWith(".md"))) {
+  const name = path.posix.basename(src, ".md");
+  const text = installedText(src);
+  for (const [tool, rel] of [["claude", `.claude/agents/${name}.md`], ["copilot", `.github/agents/${name}.agent.md`]]) {
+    if (tool === "claude" ? !claude : !copilot) continue;
+    copy(rel, Buffer.from(forTool(text, tool)));
+    agentFiles.push(rel);
+  }
+}
 // The Copilot hook file is generated per repo (absolute script path), so it goes through copy() like the files above.
 const COPILOT_HOOK_FILE = ".github/hooks/wf-plan-gate.json";
 if (copilot) {
   const cfg = { version: 1, hooks: { PreToolUse: [{ type: "command", matcher: HOOK_MATCHER, command: HOOK_COMMAND, timeoutSec: 10 }] } };
   copy(COPILOT_HOOK_FILE, Buffer.from(JSON.stringify(cfg, null, 2) + "\n"));
 }
-const entryFiles = [...kitFiles, ...(claude ? [RULES] : []), ...(copilot ? [INSTR, COPILOT_HOOK_FILE] : [])];
+const entryFiles = [...kitFiles, ...agentFiles, ...(claude ? [RULES] : []), ...(copilot ? [INSTR, COPILOT_HOOK_FILE] : [])];
 
 // Remove files an older kit version installed that this version no longer ships
 const COPILOT_DIRS = [".github/prompts/", ".github/agents/", ".github/hooks/"];

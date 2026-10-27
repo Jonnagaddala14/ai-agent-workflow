@@ -1,10 +1,6 @@
 # PLAN: <short title>
 
 Status: DRAFT
-<!-- DRAFT → APPROVED (<date>) → IMPLEMENTED → DONE (or ABANDONED). Only the user's approval moves it to APPROVED.
-     With milestones it stays APPROVED until the last milestone is done; tick the milestones as they're done.
-     Quick form (bug fixes, small changes): add "Tier: quick" on the next line and keep only Goal, Files to touch,
-     Acceptance criteria, Steps and Verify. About 15 lines. -->
 
 ## Goal
 <1–2 sentences: what is being built and why. For a bug: the root cause, with file:line>
@@ -21,7 +17,6 @@ Status: DRAFT
 - Out of scope: <items>
 
 ## Context facts
-<!-- Summarised findings from code and optional sources. Cite source; no raw dumps. -->
 - <fact> — (src: path/to/file.ts:42 | Jira ABC-123 | Figma frame X)
 
 ## Files to touch
@@ -35,7 +30,6 @@ Status: DRAFT
 - [ ] AC2: <observable behaviour> — verified by <...>
 
 ## Steps
-<!-- For large tasks, group steps under "### [ ] Milestone 1", "### [ ] Milestone 2"; one session each, ticked to [x] when done. -->
 - [ ] 1. <step>
 - [ ] 2. <step>
 - [ ] 3. Add/update tests for <behaviour>
@@ -48,5 +42,3 @@ Status: DRAFT
 <build / test / lint commands>
 ```
 Expected: <what success looks like>
-
-<!-- Review findings go in .agent-workflow/plans/<slug>.review.md, not here. -->

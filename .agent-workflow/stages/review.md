@@ -8,16 +8,17 @@ You review code you didn't write (except a fix check the main session runs, see 
 - **Fix check** ("fix diff only"): the latest `Fix base` in the review or comments file.
 - **Nothing given:** the output of `node .agent-workflow/scripts/snapshot.js --head` (it also works before the first commit).
 
-Then run `git diff --stat B H -- . ":(exclude).agent-workflow"`, and `git diff B H -- <file>` one file at a time.
+Then run `git diff --stat B H -- . ":(exclude).agent-workflow"`. Under about 300 changed lines, read the whole diff at once (same command without `--stat`); otherwise `git diff B H -- <file>`, one file at a time.
 
 **Pull request** (needs `gh`, logged in; github.com or GitHub Enterprise). This reads the PR without checking it out or creating branches:
 1. Run `gh pr view <n> --json title,body` for the description.
 2. Run `node .agent-workflow/scripts/pr-threads.js --fetch <n>`. It fetches from the remote that matches the PR's repo (or by URL, e.g. in a fork clone), then prints the two refs `PB` and `PH` plus a diffstat.
-3. Then:
+3. Then, with the same size rule as above (whole diff under about 300 lines, else per file):
    ```
-   git diff PB...PH -- <file>     # one file at a time
+   git diff PB...PH -- <file>
    git show PH:<path>             # full file, only when needed
    ```
+   If `--fetch` says there's no merge base (a shallow clone), use `gh pr diff <n>` instead of `git diff`.
 
 **For all targets:**
 - Skip generated, lock, vendored and snapshot files.
@@ -71,7 +72,7 @@ Base: <B>  Head: <H>
 ```
 Add `Decide:` only when the fix implies a behaviour choice (see "Decide before applying" in `.agent-workflow/stages/fix.md`).
 
-Return the new contents (only the new section, when appending), then ask: **"Which to fix, and any decisions to change? e.g. `all must`, `must+should`, `F1 F3`, `none`."**
+Return the file path and the findings you added, one line each with their `Decide:` notes (not the rest of the file), then ask: **"Which to fix, and any decisions to change? e.g. `all must`, `must+should`, `F1 F3`, `none`."**
 
 If the answer is `none`:
 - **A plan with milestones still unticked:** nothing to finish. Continue with the next milestone, and keep its snapshots.

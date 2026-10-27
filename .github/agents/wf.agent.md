@@ -10,7 +10,7 @@ Task: the user's message. Empty means: pick a work item from the connected track
 0. **Standards.** If `.agent-workflow/STANDARDS.md` is missing, say it's a one-time sample of the codebase and ask to run it. On yes, follow `.agent-workflow/stages/standards.md` here (Explore sub-agents only for more than one area, at most 5) and **STOP** for the user's decisions and approval. Then continue.
 1. **Plan (here).** Follow `.agent-workflow/stages/plan.md` with `.agent-workflow/PLAN_TEMPLATE.md`: MCP sources and work item first, then understand, tier, context, plan. Ask the user's questions in one batch. Show the plan and **STOP** for approval. Only the user's explicit yes sets `Status: APPROVED`.
 2. **Implement.**
-   - **Trivial:** already done in step 1's place; verify and report.
+   - **Trivial:** the plan stage (step 3) already deleted its DRAFT and did the change; just report.
    - **Quick** (`Tier: quick`): implement and verify here, per the top of `.agent-workflow/stages/implement.md`. Self-check the diff. Spawn `wf-reviewer` only if the diff touches security, data or a public API. Go to step 5.
    - **Full:** spawn `wf-implementer` with the plan path (plus "milestone N" for milestone 2 onwards). Relay its 3–6 lines. If it's blocked or asks a question, ask the user, then spawn it again with the answer and a note of what's already done (the plan's ticked steps), so it doesn't redo work.
 3. **Review.** Spawn `wf-reviewer` with the plan path (plus "milestone N" when relevant). Show its findings as returned, with their `Decide:` notes, and ask which to fix and which decisions to change. `none`: next milestone (step 2) or step 5.

@@ -32,9 +32,9 @@ test("fresh install writes the kit, entry files, hook, ignore rules and manifest
   assert.equal(m.version, VERSION);
   assert.deepEqual(m.skipped, []);
   assert.equal(m.partial, undefined);
-  assert.equal(Object.keys(m.files).length, 33);
+  assert.equal(Object.keys(m.files).length, 35);
   for (const rel of [".agent-workflow/AGENT_WORKFLOW.md", ".agent-workflow/scripts/mcp-servers.js", ".claude/commands/wf.md",
-    ".claude/rules/agent-workflow.md", ".github/prompts/wf.prompt.md", ".github/prompts/wf-plan.prompt.md",
+    ".claude/rules/agent-workflow.md", ".claude/agents/wf-reviewer.md", ".github/prompts/wf.prompt.md", ".github/prompts/wf-plan.prompt.md",
     ".github/agents/wf.agent.md", ".github/agents/wf-implementer.agent.md", ".github/agents/wf-reviewer.agent.md",
     ".github/hooks/wf-plan-gate.json", ".github/instructions/agent-workflow.instructions.md"]) {
     assert.ok(exists(dir, rel), rel);
@@ -49,6 +49,32 @@ test("fresh install writes the kit, entry files, hook, ignore rules and manifest
   assert.equal(copilotHook.command, `node "${fs.realpathSync.native(dir).replace(/\\/g, "/")}/.agent-workflow/hooks/plan-gate.js"`);
   assert.match(read(dir, ".git/info/exclude"), /# ai-agent-workflow:start[\s\S]*\/\.agent-workflow\/\*[\s\S]*\/\.github\/agents\/wf\*\.agent\.md/);
   assert.equal(execFileSync("git", ["-C", dir, "status", "--porcelain"], { encoding: "utf8" }), "");
+});
+
+test("core rules and sub-agents are generated per tool, without the other tool's lines", () => {
+  const dir = repo();
+  install(dir);
+  const claudeRules = read(dir, ".claude/rules/agent-workflow.md");
+  const copilotRules = read(dir, ".github/instructions/agent-workflow.instructions.md");
+  assert.match(claudeRules, /SendMessage/);
+  assert.doesNotMatch(claudeRules, /one-shot/);
+  assert.match(copilotRules, /one-shot/);
+  assert.doesNotMatch(copilotRules, /SendMessage/);
+  const claudeReviewer = read(dir, ".claude/agents/wf-reviewer.md");
+  const copilotReviewer = read(dir, ".github/agents/wf-reviewer.agent.md");
+  assert.match(claudeReviewer, /^---\nname: wf-reviewer\n[\s\S]*\ntools: Read, Grep/);
+  assert.doesNotMatch(claudeReviewer, /user-invocable/);
+  assert.match(copilotReviewer, /\ntools: \[read, search, edit, execute\]\nuser-invocable: false\n---\n/);
+  assert.match(read(dir, ".claude/agents/wf-implementer.md"), /You'll be resumed/);
+  assert.doesNotMatch(read(dir, ".github/agents/wf-implementer.agent.md"), /resumed/);
+  for (const text of [claudeRules, copilotRules, claudeReviewer, copilotReviewer]) {
+    assert.doesNotMatch(text, /<!-- (claude|copilot) -->/);
+  }
+});
+
+test("the always-loaded core stays small", () => {
+  const words = fs.readFileSync(path.join(KIT, ".agent-workflow/AGENT_WORKFLOW.md"), "utf8").split(/\s+/).length;
+  assert.ok(words < 650, `AGENT_WORKFLOW.md has ${words} words`);
 });
 
 test("re-running changes nothing", () => {
@@ -87,14 +113,14 @@ test("single-tool installs leave the other tool out", () => {
   install(a, "--claude-only");
   assert.ok(exists(a, ".claude/commands/wf.md"));
   assert.ok(!exists(a, ".github"));
-  assert.equal(Object.keys(manifest(a).files).length, 22);
+  assert.equal(Object.keys(manifest(a).files).length, 24);
   const b = repo();
   install(b, "--copilot-only");
   assert.ok(exists(b, ".github/prompts/wf-plan.prompt.md"));
   assert.ok(exists(b, ".github/agents/wf.agent.md"));
   assert.ok(exists(b, ".github/hooks/wf-plan-gate.json"));
   assert.ok(!exists(b, ".claude"));
-  assert.equal(Object.keys(manifest(b).files).length, 24);
+  assert.equal(Object.keys(manifest(b).files).length, 26);
   // A later --claude-only run on the same repo keeps the Copilot files
   install(b, "--claude-only");
   assert.ok(exists(b, ".github/agents/wf.agent.md"));

@@ -19,7 +19,7 @@ Rework never starts from zero: resume the agent that already has the code (see "
 
 The fix check diffs against the checkpoint, so it sees only the fixes, including new files.
 
-**Fix check.** Review only the fix diff (`.agent-workflow/stages/review.md`, "Fix check"), done by whoever the table names: diff against the checkpoint one file at a time, check each item, its settled choices and STANDARDS.md, and append `## Round N`.
+**Fix check.** Review only the fix diff (`.agent-workflow/stages/review.md`, "Fix check"), done by whoever the table names: diff against the checkpoint (whole diff when small, else one file at a time), check each item, its settled choices and STANDARDS.md, and append `## Round N`.
 
 Round 2 runs only for new must-fix or should-fix findings, or decisions the user changes. Do at most 2 rounds, then report anything still open.
 
