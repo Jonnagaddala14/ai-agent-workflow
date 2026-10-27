@@ -7,18 +7,23 @@ const fs = require("fs");
 const path = require("path");
 
 const root = path.resolve(process.argv[2] || ".");
+// Without git, skip build output and dependencies. Files git tracks are intentional, so then skip only
+// vendored dependencies and the kit's folder.
 const SKIP = new Set(["node_modules", ".git", "build", "dist", "out", ".gradle", "vendor", "Pods", "bin", "obj",
-  ".next", "coverage", ".idea", ".vscode", "target", "__pycache__", ".venv", "venv", ".agent-workflow"]);
-const CONFIG = /^(package\.json|tsconfig.*\.json|build\.gradle(\.kts)?|settings\.gradle(\.kts)?|gradle\.properties|pom\.xml|go\.mod|Cargo\.toml|pyproject\.toml|requirements.*\.txt|Gemfile|composer\.json|.*\.csproj|manifest|bsconfig\.json|bslint\.json|\.eslintrc.*|eslint\.config\..*|\.prettierrc.*|\.editorconfig|detekt.*\.yml|\.ktlint.*|\.swiftlint\.yml|\.rubocop\.yml|ruff\.toml|\.flake8|checkstyle.*\.xml|sonar-project\.properties|Dockerfile|docker-compose.*\.ya?ml|AndroidManifest\.xml|angular\.json|vite\.config\..*|next\.config\..*|webpack\.config\..*|jest\.config\..*|vitest\.config\..*|playwright\.config\..*)$/i;
-const DOC = /^(readme|contributing|architecture|adr|design|coding|style|conventions?)/i;
+  ".next", ".nuxt", ".svelte-kit", ".angular", ".turbo", ".parcel-cache", ".cache", "coverage", ".idea", ".vscode", "target",
+  "__pycache__", ".venv", "venv", ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".dart_tool", ".expo", "DerivedData",
+  ".build", "_build", "deps", "Carthage", ".terraform", ".serverless", ".agent-workflow"]);
+const SKIP_TRACKED = new Set(["node_modules", "vendor", "Pods", "Carthage", ".agent-workflow"]);
+const CONFIG = /^(package\.json|tsconfig.*\.json|deno\.jsonc?|bunfig\.toml|build\.gradle(\.kts)?|settings\.gradle(\.kts)?|gradle\.properties|pom\.xml|build\.sbt|go\.mod|Cargo\.toml|pyproject\.toml|setup\.(py|cfg)|requirements.*\.txt|Pipfile|tox\.ini|pytest\.ini|mix\.exs|Gemfile|.*\.gemspec|composer\.json|.*\.(cs|fs|vb)proj|.*\.sln|Directory\.(Build|Packages)\.props|global\.json|nuget\.config|pubspec\.yaml|Package\.swift|Podfile|Cartfile|project\.pbxproj|CMakeLists\.txt|Makefile|meson\.build|manifest|bsconfig\.json|bslint\.json|(main|variables|versions|providers)\.tf|terragrunt\.hcl|serverless\.ya?ml|\.eslintrc.*|eslint\.config\..*|biome\.jsonc?|\.prettierrc.*|\.editorconfig|\.stylelintrc.*|detekt.*\.yml|\.ktlint.*|\.swiftlint\.yml|\.swiftformat|\.rubocop\.yml|ruff\.toml|\.flake8|\.pylintrc|mypy\.ini|\.golangci\.ya?ml|rustfmt\.toml|clippy\.toml|phpcs\.xml(\.dist)?|\.php-cs-fixer(\.dist)?\.php|analysis_options\.yaml|checkstyle.*\.xml|sonar-project\.properties|Dockerfile|docker-compose.*\.ya?ml|compose\.ya?ml|AndroidManifest\.xml|angular\.json|nx\.json|turbo\.json|lerna\.json|pnpm-workspace\.yaml|vite\.config\..*|next\.config\..*|nuxt\.config\..*|svelte\.config\..*|astro\.config\..*|webpack\.config\..*|jest\.config\..*|vitest\.config\..*|playwright\.config\..*|cypress\.config\..*|app\.json|capacitor\.config\..*|tailwind\.config\..*)$/i;
+// Includes the team's agent instructions (CLAUDE.md, AGENTS.md, copilot-instructions.md), which often hold build commands and rules
+const DOC = /^(readme|contributing|architecture|adr|design|coding|style|conventions?|claude|agents|copilot-instructions)/i;
 const TEST = /(^|\/)(tests?|__tests__|spec|androidTest|test-?utils?|[^/]*[._-](unit|integration|functional|e2e)?tests?)(\/|$)|\.(test|spec)\.[^/]+$|Test\.(kt|java|swift)$|_test\.(go|py)$/i;
 // A directory containing one of these is its own area (monorepo packages, Gradle modules, .NET projects, Roku channels)
-const PROJECT = /^(package\.json|build\.gradle(\.kts)?|pom\.xml|go\.mod|Cargo\.toml|pyproject\.toml|composer\.json|Gemfile|pubspec\.yaml|Package\.swift|manifest|bsconfig\.json|.*\.(cs|fs|vb)proj)$/i;
+const PROJECT = /^(package\.json|deno\.jsonc?|build\.gradle(\.kts)?|pom\.xml|build\.sbt|go\.mod|Cargo\.toml|pyproject\.toml|setup\.py|mix\.exs|composer\.json|Gemfile|pubspec\.yaml|Package\.swift|manifest|bsconfig\.json|.*\.(cs|fs|vb)proj)$/i;
 // Lock files and generated code are poor samples
-const NOISE = /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|.*\.lock|.*\.lockfile|go\.sum|packages\.lock\.json)$|\.min\.(js|css)$|\.(g|designer)\.cs$|\.generated\.|(^|\/)Migrations\//i;
-// The kit's entry files and agent config, so they don't show up as areas or samples of the project.
-// Also matches the 0.2.0 layout (root files, workflow/, plans/), in case a repo committed it.
-const KIT = /^(AGENTS\.md|CLAUDE(\.local)?\.md|\.claude\/settings(\.local)?\.json|\.github\/copilot-instructions\.md|\.claude\/commands\/wf[\w-]*\.md|\.claude\/agents\/wf-[\w-]*\.md|\.claude\/rules\/agent-workflow\.md|\.github\/prompts\/wf-[\w-]*\.prompt\.md|\.github\/instructions\/agent-workflow\.instructions\.md|AGENT_WORKFLOW\.md|PLAN_TEMPLATE\.md|STANDARDS\.md|\.wf-manifest\.json|\.wf-version|workflow\/(standards|plan|implement|review|fix)\.md|workflow\/scripts\/(repo-map|snapshot|pr-threads)\.js|workflow\/templates\/STANDARDS_TEMPLATE\.md|plans\/[^/]+\.md|\.claude\/hooks\/plan-gate\.js)$/;
+const NOISE = /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|deno\.lock|.*\.lock|.*\.lockfile|go\.sum|packages\.lock\.json|pubspec\.lock|project\.pbxproj|.*\.xcworkspacedata)$|\.min\.(js|css)$|\.(g|designer)\.cs$|\.generated\.|\.(freezed|g|pb|pbobjc)\.(dart|go|swift|js|ts|py|m)$|_pb2\.py$|(^|\/)Migrations\//i;
+// The kit's entry files and agent settings, so they don't show up as areas or samples of the project
+const KIT = /^(\.claude\/settings(\.local)?\.json|\.claude\/commands\/wf[\w-]*\.md|\.claude\/agents\/wf-[\w-]*\.md|\.claude\/rules\/agent-workflow\.md|\.github\/prompts\/wf[\w-]*\.prompt\.md|\.github\/agents\/wf[\w-]*\.agent\.md|\.github\/hooks\/wf-plan-gate\.json|\.github\/instructions\/agent-workflow\.instructions\.md)$/;
 
 const sh = (cmd, args) => {
   if (cmd === "git") args = ["-c", "core.quotePath=false", ...args]; // print non-ASCII paths as-is
@@ -31,7 +36,8 @@ const sh = (cmd, args) => {
 
 function listFiles() {
   const git = sh("git", ["ls-files"]);
-  if (git) return { files: git.split("\n").filter(Boolean).filter((f) => !f.split("/").some((p) => SKIP.has(p))), git: true };
+  // "" is a git repo with nothing tracked yet, still a git repo
+  if (git !== null) return { files: git.split("\n").filter(Boolean).filter((f) => !f.split("/").some((p) => SKIP_TRACKED.has(p))), git: true };
   const files = [];
   (function walk(dir, rel) {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {

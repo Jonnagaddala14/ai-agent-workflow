@@ -1,5 +1,7 @@
 # Stage: Implement + verify
 
+**Quick plans** (`Tier: quick`) are implemented by the session that planned them, right after approval: do steps 4–6 below, then self-check the diff (`git diff --stat`, then each file) against the plan and `.agent-workflow/STANDARDS.md`, and report. Spawn a reviewer only if the diff touches security, data or a public API. Everything else below is for full plans, run in a fresh context.
+
 1. Stop if the plan isn't `Status: APPROVED`. Don't ask for approval again, and don't redo exploration. The plan is your only context.
 2. **Drift check:** every file in "Files to touch" that isn't marked `(new)` exists and matches the plan's "Context facts". Files marked `(new)` shouldn't exist yet. If anything differs, stop and report what changed.
 3. **Milestones:** if the plan has them, do only the first unticked one. For milestone 2 onwards, first run `node .agent-workflow/scripts/snapshot.js <slug>-m<N>` and add `- Milestone N base: <output>` under the plan's `Base snapshot` line, so its review covers only this milestone.

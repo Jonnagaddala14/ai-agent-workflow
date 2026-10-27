@@ -1,6 +1,6 @@
 # Stage: Review (requirements + actual code + standards)
 
-You review code you didn't write. Don't edit code in this stage. The only file you write is the review file (or, for a fix check of PR comments, the comments file).
+You review code you didn't write (except a fix check the main session runs, see "Who does what" in `.agent-workflow/stages/fix.md`). Don't edit code in this stage. The only file you write is the review file (or, for a fix check of PR comments, the comments file).
 
 ## 1. Get the change cheaply
 **Local changes** are compared as snapshots, so new (untracked) files are included and earlier unrelated edits aren't. `H` is the output of `node .agent-workflow/scripts/snapshot.js`, taken now. `B` is:
@@ -61,7 +61,7 @@ Requirements come from the plan's acceptance criteria. For a PR without a plan, 
 # Review: <plan or PR #n> — Verdict: approve | changes requested
 Base: <B>  Head: <H>
 ## Findings
-- [ ] F1 [must-fix] path:line — <issue> — Fix: <concrete proposed change>
+- [ ] F1 [must-fix] path:line — <issue> — Fix: <concrete proposed change> — Decide: <choice> (recommend <default>)
 - [ ] F2 [should-fix] path:line — <issue> — Fix: <...>
 - [ ] F3 [suggestion] path:line — <better approach> — Why: <benefit>
 ## Requirements
@@ -69,7 +69,9 @@ Base: <B>  Head: <H>
 ## Not reviewed
 - <files skipped, or "none">
 ```
-Return the new contents (only the new section, when appending), then ask: **"Which to fix? e.g. `all must`, `must+should`, `F1 F3`, `none`."**
+Add `Decide:` only when the fix implies a behaviour choice (see "Decide before applying" in `.agent-workflow/stages/fix.md`).
+
+Return the new contents (only the new section, when appending), then ask: **"Which to fix, and any decisions to change? e.g. `all must`, `must+should`, `F1 F3`, `none`."**
 
 If the answer is `none`:
 - **A plan with milestones still unticked:** nothing to finish. Continue with the next milestone, and keep its snapshots.

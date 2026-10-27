@@ -4,10 +4,6 @@ argument-hint: [.agent-workflow/plans/<slug>.md | PR number/URL] [--post]
 ---
 Target: $ARGUMENTS
 
-0. If `.agent-workflow/STANDARDS.md` doesn't exist, offer to run `/wf-standards` first (one time). If I decline, continue.
-1. Spawn `wf-reviewer` with the target. Show its findings as returned, then ask which to fix. If I say `none`, finish as `.agent-workflow/stages/review.md` describes (end of section 4).
-2. If I pick findings:
-   - For a PR target, first do the branch check in `.agent-workflow/stages/fix.md` (section B, step 4).
-   - Spawn `wf-implementer` with the review file and those IDs.
-   - Then do section A steps 5–6 of `.agent-workflow/stages/fix.md` here: spawn `wf-reviewer` with the review file and "fix diff only" (at most 2 rounds, asking me before each), then finish.
+1. Spawn `wf-reviewer` with the target. Show its findings as returned (with their `Decide:` notes), then ask which to fix and which decisions to change. If I say `none`, finish as `.agent-workflow/stages/review.md` describes (end of section 4).
+2. If I pick findings, follow `.agent-workflow/stages/fix.md` section A from step 2 (its "Who does what" table decides who applies and who checks). For a PR target, do the branch check (section B, step 4) first. Send round 2 and any answers to the same sub-agents with SendMessage instead of spawning new ones.
 3. If `--post` was given (for a teammate's PR): write the findings as one review comment to `.agent-workflow/plans/pr-<n>.post.md` and show it. Only after I confirm, post it with `gh pr review <n> --comment --body-file .agent-workflow/plans/pr-<n>.post.md`. Use `--request-changes` instead of `--comment` only if I ask. Afterwards, unless fixes follow, run `node .agent-workflow/scripts/snapshot.js --clean pr-<n>`.

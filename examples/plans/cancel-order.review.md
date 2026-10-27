@@ -1,7 +1,7 @@
-# Review: plans/cancel-order.md — Verdict: approve
+# Review: cancel-order — Verdict: approve
 Base: 8c1d0e4  Head: 51ab9f2
 ## Findings
-- [x] F1 [must-fix] API/Services/OrderService.cs:58 — read-then-update isn't atomic; a payment that lands between the read and the save gets overwritten with `Cancelled` — Fix: conditional update `Where(o => o.Id == id && o.Status == Pending)` + check rows affected — fixed
+- [x] F1 [must-fix] API/Services/OrderService.cs:58 — read-then-update isn't atomic; a payment that lands between the read and the save gets overwritten with `Cancelled` — Fix: conditional update `Where(o => o.Id == id && o.Status == Pending)` + check rows affected — Decide: 0 rows affected → 409 or 404? (recommend 409, matches AC2) — settled: 409 — fixed
 - [x] F2 [should-fix] API/Endpoints/OrderEndpoints.cs:47 — returns the `Order` entity (STANDARDS: API › Architecture, DTOs) — Fix: map to `OrderDto` — fixed
 - [ ] F3 [suggestion] Web/src/pages/OrderDetailsPage.js:31 — no confirmation before cancelling — Why: avoids accidental cancels; one `window.confirm` — skipped (user)
 ## Requirements

@@ -7,7 +7,7 @@ Runs when `.agent-workflow/STANDARDS.md` doesn't exist, or when the user runs it
    - the manifests and lint configs it lists that tell you the stack;
    - the docs it lists (README, CONTRIBUTING, architecture, ADRs). Documented rules win over inferred ones.
    Split the repo into **areas**: deployable units or modules with their stack, e.g. `app/` Android, `api/` .NET, `web/` React, `roku/` channel.
-2. **Sample each area.** For more than one area, use parallel Explore sub-agents, one per area, and at most 5. If there are more areas, group those with the same stack and parent folder (e.g. several .NET projects under `src/`) into one sub-agent, and write one shared section for them. Without sub-agents (e.g. Copilot), do the areas one at a time. Write each area's notes (25 lines or fewer) before starting the next, and don't re-read files from earlier areas.
+2. **Sample each area.** For more than one area, use parallel Explore sub-agents, one per area, and at most 5. If there are more areas, group those with the same stack and parent folder (e.g. several .NET projects under `src/`) into one sub-agent, and write one shared section for them. A single-area repo needs no sub-agent. Without sub-agents, do the areas one at a time. Write each area's notes (25 lines or fewer) before starting the next, and don't re-read files from earlier areas.
    - Pick 2–3 representative files per role: entry point, UI, state/view model, service/use case, data/repository, API client, config, test. Prefer the hotspots from the repo map.
    - Read for structure: folder layout, imports and dependency direction, signatures, naming, error handling, logging, validation, configuration and secrets, tests.
    - Each sub-agent returns 25 lines or fewer: the conventions it saw, with one evidence path each, plus any inconsistencies.
@@ -19,6 +19,7 @@ Runs when `.agent-workflow/STANDARDS.md` doesn't exist, or when the user runs it
 4. **Write `.agent-workflow/STANDARDS.md`** from `.agent-workflow/templates/STANDARDS_TEMPLATE.md`:
    - `Status: DRAFT (generated <date>)` and `Generated at commit: <sha>`.
    - About 120 lines at most, with sections per area.
+   - Write it with the file-edit tool, not through a shell command. The plan gate allows writes inside `.agent-workflow/`; shell one-liners (`node -e`, nested `powershell -Command`, here-strings) break on quoting in task runners and on Windows.
 5. **Consent:** show a short summary (areas, number of rules, decisions needed) and ask the user to resolve the decisions and approve. Then set `Status: APPROVED (<date>)`.
 
 ## Refresh (`--refresh`)

@@ -4,8 +4,8 @@ argument-hint: <PR number | .agent-workflow/plans/<…>.review.md>
 ---
 Target: $ARGUMENTS
 
-Follow @.agent-workflow/stages/fix.md.
-- **PR number:** do section B steps 1–4 here (proposals, my choice, branch check). Then spawn `wf-implementer` with `.agent-workflow/plans/pr-<n>.comments.md` and the C-ids I picked. Then do step 6 here.
-- **Review file:** ask me which F-ids to fix, then spawn `wf-implementer` with the file and those IDs. Then do steps 5–6 of section A here.
+Follow @.agent-workflow/stages/fix.md: a PR number → section B, a review file → section A.
 
-For the fix check, spawn `wf-reviewer` with the same file and "fix diff only"; it appends a `## Round N` there. Do at most 2 rounds. If a sub-agent returns a question, ask me, then spawn it again with my answer.
+When its "Who does what" table calls for sub-agents, they are `wf-implementer` (given the file and the IDs I picked) and `wf-reviewer` (given the same file and "fix diff only").
+
+**Resume, don't respawn.** If a sub-agent returns a question, ask me, then send my answer to that same sub-agent with SendMessage, so it continues with the code it already read. Round 2 goes to the round-1 implementer and reviewer the same way. Spawn a fresh one only if it can't be resumed.

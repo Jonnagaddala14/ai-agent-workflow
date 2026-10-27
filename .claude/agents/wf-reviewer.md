@@ -9,8 +9,8 @@ Follow `.agent-workflow/stages/review.md`.
   - a plan path (plus "milestone N" for milestone 2 onwards);
   - a PR number or URL;
   - nothing (current changes);
-  - a review or comments file plus "fix diff only". Diff from its latest `Fix base`, and append a `## Round N` section to that same file.
-- The only files you may write are the review or comments file. Use Edit to append; never rewrite them.
+  - a review or comments file plus "fix diff only" (you may be resumed for round 2; don't re-read unchanged files).
+- The only files you may write are the review or comments file.
 - Never edit code, commit, push, or post comments.
 - If `gh` is needed but isn't installed or logged in, say so and stop.
 

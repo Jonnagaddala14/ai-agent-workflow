@@ -35,6 +35,9 @@ function main() {
   const g = (args, env, input) => git(["-C", top, ...args], env, input);
   const NS = namespace(top);
   const [cmd, arg] = process.argv.slice(2);
+  if (cmd?.startsWith("-") && cmd !== "--head" && cmd !== "--clean") {
+    throw new Error("usage: snapshot.js [name] | --head | --clean <slug>");
+  }
 
   if (cmd === "--head") {
     let tree;
@@ -46,7 +49,8 @@ function main() {
     console.log(tree);
   } else if (cmd === "--clean") {
     if (!arg) throw new Error("usage: snapshot.js --clean <slug>");
-    const own = new RegExp(`^${NS}${safe(arg).replace(/\./g, "\\.")}-(base|head|m\\d+|fix\\d+)$`); // not other slugs sharing a prefix
+    const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const own = new RegExp(`^${esc(NS + safe(arg))}-(base|head|m\\d+|fix\\d+)$`); // not other slugs sharing a prefix
     const refs = g(["for-each-ref", "--format=%(refname)", NS]).split("\n").filter((r) => own.test(r));
     for (const r of refs) g(["update-ref", "-d", r]);
     console.log(`removed ${refs.length} snapshot ref(s)`);
@@ -76,4 +80,4 @@ if (require.main === module) {
     process.exit(1);
   }
 }
-module.exports = { namespace, git, safe };
+module.exports = { namespace, git }; // used by pr-threads.js --fetch

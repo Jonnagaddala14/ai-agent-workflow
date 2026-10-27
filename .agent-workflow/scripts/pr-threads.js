@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 // Prints a PR's unresolved review threads and review summaries in compact form,
 // so the agent reads a few lines instead of raw GitHub JSON.
-// Usage: node .agent-workflow/scripts/pr-threads.js <pr-number> [--bots]   (also --fetch / --reply / --resolve; run with no args for help)
+// Usage: node .agent-workflow/scripts/pr-threads.js <pr-number> [--bots] [--all]   (also --fetch / --reply / --resolve; run with no args for help)
 const { execFileSync } = require("child_process");
 const fs = require("fs");
 
 const QUERY = `query($owner:String!,$repo:String!,$n:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$n){
   title headRefOid
   reviewThreads(first:100){pageInfo{hasNextPage} nodes{id isResolved isOutdated path line originalLine
-    comments(first:20){nodes{body author{__typename login}}}}}
-  reviews(last:30){nodes{state body author{__typename login}}}}}}`;
+    comments(first:20){pageInfo{hasNextPage} nodes{body author{__typename login}}}}}
+  reviews(last:30){pageInfo{hasPreviousPage} nodes{state body author{__typename login} commit{oid}}}}}}`;
 
 const clip = (s, max) => {
   const t = (s || "").replace(/\s+/g, " ").trim();
@@ -18,7 +18,7 @@ const clip = (s, max) => {
 const who = (a) => (a ? `@${a.login}` : "@ghost");
 const isBot = (a) => a && a.__typename === "Bot";
 
-function format(pr, n, includeBots) {
+function format(pr, n, includeBots, allReviews) {
   const out = [`PR #${n}: ${clip(pr.title, 100)} (head ${pr.headRefOid.slice(0, 7)})`];
   let t = 0;
   for (const th of pr.reviewThreads.nodes) {
@@ -28,19 +28,30 @@ function format(pr, n, includeBots) {
     const loc = `${th.path}:${th.line ?? th.originalLine ?? "?"}${th.isOutdated ? " [outdated]" : ""}`;
     out.push(`T${++t} ${loc} ${who(cs[0].author)}: ${clip(cs[0].body, 500)} {${th.id}}`);
     for (const r of cs.slice(1)) out.push(`   ↳ ${who(r.author)}: ${clip(r.body, 200)}`);
+    if (th.comments.pageInfo.hasNextPage) out.push("   ↳ (more than 20 comments; later ones not shown)");
   }
+  // Review summaries can't be resolved, so by default only those on the current head are shown:
+  // a later push usually means they were addressed
   let g = 0;
+  let older = 0;
   for (const rv of pr.reviews.nodes) {
     if (!(rv.body || "").trim() || (!includeBots && isBot(rv.author))) continue;
+    if (!allReviews && rv.commit?.oid !== pr.headRefOid) {
+      older++;
+      continue;
+    }
     out.push(`G${++g} ${who(rv.author)} (${rv.state}): ${clip(rv.body, 400)}`);
   }
   if (!t && !g) out.push("No unresolved review comments.");
+  if (older) out.push(`(${older} review summary(ies) on earlier commits hidden; --all shows them)`);
   if (pr.reviewThreads.pageInfo.hasNextPage) out.push("(more than 100 threads; only the first 100 shown)");
+  if (pr.reviews.pageInfo.hasPreviousPage) out.push("(more than 30 reviews; only the latest 30 checked for summaries)");
   return out.join("\n");
 }
 
 const USAGE = `Usage:
-  node pr-threads.js <pr-number> [--bots]          list unresolved threads
+  node pr-threads.js <pr-number> [--bots] [--all]  list unresolved threads, and review summaries on the
+                                                   current head (--all: on any commit)
   node pr-threads.js --fetch <pr-number>           fetch the PR's base and head into refs/wf/<worktree>/pr-<n>-base/-head
                                                    (no checkout, no branches) and print the refs and a diffstat
   node pr-threads.js --reply <threadId> <file>     reply in a thread (body read from file; only after user consent)
@@ -110,9 +121,10 @@ function main() {
     if (fetch) return fetchPr(n);
     // Take owner/repo from the PR itself, so forks and multiple remotes resolve to the right repo
     const { host, owner, repo } = prInfo(n);
-    const pr = gql(host, QUERY, [`owner=${owner}`, `repo=${repo}`, `n=${n}`]).repository.pullRequest;
+    // owner/repo as literals: -F would turn an all-digit name into a number and fail the String! type
+    const pr = gql(host, QUERY, [`n=${n}`], [`owner=${owner}`, `repo=${repo}`]).repository.pullRequest;
     if (!pr) throw new Error(`PR #${n} not found`);
-    console.log(format(pr, n, argv.includes("--bots")));
+    console.log(format(pr, n, argv.includes("--bots"), argv.includes("--all")));
   } catch (e) {
     const missing = e.code === "ENOENT" && String(e.syscall).startsWith("spawn"); // gh/git itself not found, not a missing file
     if (e.message === USAGE) console.error(USAGE);
@@ -122,4 +134,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { format, main };
+module.exports = { format, parseUrl }; // for the tests

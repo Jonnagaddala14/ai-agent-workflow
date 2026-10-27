@@ -2,12 +2,14 @@
 
 Status: DRAFT
 <!-- DRAFT → APPROVED (<date>) → IMPLEMENTED → DONE (or ABANDONED). Only the user's approval moves it to APPROVED.
-     With milestones it stays APPROVED until the last milestone is done; tick the milestones as they're done. -->
+     With milestones it stays APPROVED until the last milestone is done; tick the milestones as they're done.
+     Quick form (bug fixes, small changes): add "Tier: quick" on the next line and keep only Goal, Files to touch,
+     Acceptance criteria, Steps and Verify. About 15 lines. -->
 
 ## Goal
-<1–2 sentences: what is being built and why>
+<1–2 sentences: what is being built and why. For a bug: the root cause, with file:line>
 
-- Sources: <e.g. Jira ABC-123, Figma frame X, or "none">
+- Sources: <e.g. Jira ABC-123, GitHub #45, Figma frame X, or "none">
 - Base snapshot: <output of `node .agent-workflow/scripts/snapshot.js <slug>-base` at approval; reviews diff against this>
 
 ## Approach
