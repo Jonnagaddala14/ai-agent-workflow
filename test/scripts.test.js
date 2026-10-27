@@ -94,9 +94,9 @@ test("mcp-servers lists names and kinds from each tool's config, never secrets",
   const out = script(dir, "mcp-servers.js").stdout;
   assert.match(out, /configured in this repo \(2\)/);
   assert.match(out, /- jira \(http, host jira\.example\.com\) — \.vscode\/mcp\.json \[VS Code\]/);
-  assert.match(out, /- figma \(stdio, command npx\) — \.mcp\.json \[Claude Code\]/);
+  assert.match(out, /- figma \(stdio, command npx figma-mcp\) — \.mcp\.json \[Claude Code\]/);
   assert.match(out, /Could not parse: \.cursor\/mcp\.json/);
-  assert.doesNotMatch(out, /s3cret|t0ken|Bearer|figma-mcp/);
+  assert.doesNotMatch(out, /s3cret|t0ken|Bearer/);
   assert.match(script(repo(), "mcp-servers.js").stdout, /none/);
 });
 

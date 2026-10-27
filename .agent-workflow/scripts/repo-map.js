@@ -40,7 +40,13 @@ function listFiles() {
   if (git !== null) return { files: git.split("\n").filter(Boolean).filter((f) => !f.split("/").some((p) => SKIP_TRACKED.has(p))), git: true };
   const files = [];
   (function walk(dir, rel) {
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return; // unreadable (permissions): leave it out of the map
+    }
+    for (const e of entries) {
       if (SKIP.has(e.name)) continue;
       const r = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) walk(path.join(dir, e.name), r);
@@ -106,7 +112,8 @@ out.push("", `## Docs (${docs.length})`);
 out.push(...(docs.length ? docs.slice(0, 15).map((f) => `- ${f}`) : ["- none found"]));
 
 if (git) {
-  const log = sh("git", ["log", "--since=6.months.ago", "--name-only", "--pretty=format:"]);
+  // Capped, so a very busy repo doesn't overflow the output buffer and lose the whole section
+  const log = sh("git", ["log", "--since=6.months.ago", "--max-count=2000", "--name-only", "--pretty=format:"]);
   const hot = new Map();
   const known = new Set(files);
   for (const f of (log || "").split("\n")) if (f && known.has(f) && !configs.includes(f) && !NOISE.test(f)) inc(hot, f);

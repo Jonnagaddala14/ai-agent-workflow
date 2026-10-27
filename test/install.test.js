@@ -44,9 +44,10 @@ test("fresh install writes the kit, entry files, hook, ignore rules and manifest
   assert.match(hook.hooks[0].command, /plan-gate\.js/);
   const copilotHook = JSON.parse(read(dir, ".github/hooks/wf-plan-gate.json")).hooks.PreToolUse[0];
   assert.equal(copilotHook.matcher, hook.matcher);
-  // Same command in both: bare `node` + absolute canonical script path with forward slashes (cmd, bash and PowerShell)
+  // Same command in both: node (bare on Windows, absolute elsewhere) + absolute canonical script path with forward slashes
   assert.equal(copilotHook.command, hook.hooks[0].command);
-  assert.equal(copilotHook.command, `node "${fs.realpathSync.native(dir).replace(/\\/g, "/")}/.agent-workflow/hooks/plan-gate.js"`);
+  const node = process.platform === "win32" ? "node" : `"${process.execPath}"`;
+  assert.equal(copilotHook.command, `${node} "${fs.realpathSync.native(dir).replace(/\\/g, "/")}/.agent-workflow/hooks/plan-gate.js"`);
   assert.match(read(dir, ".git/info/exclude"), /# ai-agent-workflow:start[\s\S]*\/\.agent-workflow\/\*[\s\S]*\/\.github\/agents\/wf\*\.agent\.md/);
   assert.equal(execFileSync("git", ["-C", dir, "status", "--porcelain"], { encoding: "utf8" }), "");
 });
@@ -138,16 +139,57 @@ test("bad arguments are refused", () => {
   assert.ok(!exists(dir, ".agent-workflow"));
 });
 
-test("old kits and subfolders are refused", () => {
-  const v2 = repo();
-  fs.writeFileSync(path.join(v2, ".wf-manifest.json"), "{}");
-  assert.match(install(v2).stderr, /0\.2\.0.*0\.3\.1 installer/);
-  const v1 = repo();
-  fs.writeFileSync(path.join(v1, ".wf-version"), "0.1.0");
-  assert.match(install(v1).stderr, /0\.1\.0/);
+test("subfolders are refused", () => {
   const sub = path.join(repo(), "sub");
   fs.mkdirSync(sub);
   assert.match(install(sub).stderr, /repo root/);
+});
+
+test("--help prints the usage", () => {
+  const r = install("--help");
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /--uninstall/);
+});
+
+test("--dry-run reports the changes and writes nothing", () => {
+  const dir = repo();
+  const r = install(dir, "--dry-run");
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /dry run[\s\S]*added\s+\.agent-workflow\/AGENT_WORKFLOW\.md/);
+  assert.deepEqual(fs.readdirSync(dir), [".git"]);
+  assert.doesNotMatch(read(dir, ".git/info/exclude"), /ai-agent-workflow/);
+});
+
+test("--uninstall removes the kit and its hook, and keeps plans, standards and other settings", () => {
+  const dir = repo();
+  fs.mkdirSync(path.join(dir, ".claude"));
+  fs.writeFileSync(path.join(dir, ".claude/settings.local.json"), JSON.stringify({ permissions: { allow: ["Bash(ls)"] } }));
+  install(dir);
+  fs.mkdirSync(path.join(dir, ".agent-workflow/plans"));
+  fs.writeFileSync(path.join(dir, ".agent-workflow/plans/a.md"), "# PLAN: a\n");
+  fs.appendFileSync(path.join(dir, ".claude/commands/wf.md"), "\nmy edit\n");
+  const r = install(dir, "--uninstall");
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /kept\s+\.claude\/commands\/wf\.md \(edited locally/);
+  assert.match(r.stdout, /Kept your \.agent-workflow\/plans/);
+  assert.deepEqual(JSON.parse(read(dir, ".claude/settings.local.json")), { permissions: { allow: ["Bash(ls)"] } });
+  assert.deepEqual(fs.readdirSync(path.join(dir, ".agent-workflow")), ["plans"]);
+  assert.deepEqual(fs.readdirSync(path.join(dir, ".claude/commands")), ["wf.md"]);
+  assert.ok(!exists(dir, ".github"));
+  assert.doesNotMatch(read(dir, ".git/info/exclude"), /ai-agent-workflow/);
+  assert.match(install(dir, "--uninstall").stderr, /No kit install found/);
+});
+
+test("a settings.local.json with an unexpected shape is skipped, and the install completes", () => {
+  const dir = repo();
+  fs.mkdirSync(path.join(dir, ".claude"));
+  const odd = JSON.stringify({ hooks: { PreToolUse: { matcher: "Edit" } } });
+  fs.writeFileSync(path.join(dir, ".claude/settings.local.json"), odd);
+  const r = install(dir);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /SKIPPED\s+\.claude\/settings\.local\.json \(unexpected shape/);
+  assert.equal(read(dir, ".claude/settings.local.json"), odd);
+  assert.equal(manifest(dir).version, VERSION);
 });
 
 test("upgrade removes files the kit no longer ships, unless edited", () => {

@@ -92,7 +92,15 @@ function fetchPr(n) {
   const PB = `${ns}pr-${n}-base`;
   const PH = `${ns}pr-${n}-head`;
   git(["-C", top, "fetch", "-q", remote, `+refs/heads/${base}:${PB}`, `+refs/pull/${n}/head:${PH}`]);
-  const stat = git(["-C", top, "-c", "core.quotePath=false", "diff", "--stat", `${PB}...${PH}`]);
+  // PB...PH needs the merge base, which a shallow clone may not have
+  let stat;
+  try {
+    git(["-C", top, "merge-base", PB, PH]);
+    stat = git(["-C", top, "-c", "core.quotePath=false", "diff", "--stat", `${PB}...${PH}`]);
+  } catch {
+    stat = `No merge base (shallow clone?): read the diff with \`gh pr diff ${n}\` instead of git diff.\n` +
+      gh(["pr", "diff", String(n), "--name-only"]).trim();
+  }
   console.log([`PB=${PB}`, `PH=${PH}`, `remote=${remote}`, stat].join("\n"));
 }
 
@@ -107,12 +115,11 @@ function main() {
         const d = gql(host, "mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}", [], [`id=${id}`]);
         return console.log(`resolved: ${d.resolveReviewThread.thread.isResolved}`);
       }
-      const body = fs.readFileSync(file, "utf8").trim();
-      if (!body) throw new Error(`reply file ${file} is empty`);
-      // No shell is involved (execFileSync), so quotes and backticks in the body are safe
+      if (!fs.readFileSync(file, "utf8").trim()) throw new Error(`reply file ${file} is empty`);
+      // gh reads the body from the file (-F body=@file), so its length isn't capped by the command line
       const d = gql(host,
         "mutation($id:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id,body:$body}){comment{url}}}",
-        [], [`id=${id}`, `body=${body}`]);
+        [`body=@${file}`], [`id=${id}`]);
       return console.log(`replied: ${d.addPullRequestReviewThreadReply.comment.url}`);
     }
     const fetch = argv[0] === "--fetch";

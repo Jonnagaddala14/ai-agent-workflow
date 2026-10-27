@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // PreToolUse hook: while any plan in .agent-workflow/plans/ is still "Status: DRAFT", block edits to files
-// outside .agent-workflow/. Covers the edit tools and the obvious shell writes (redirects, rm/mv/cp, sed -i,
-// tree-changing git commands, PowerShell file cmdlets). Exit 2 = block, and stderr is shown to the agent.
+// outside .agent-workflow/. Covers the edit tools and the obvious shell writes (redirects, rm/mv/cp, sed -i, find -delete,
+// xargs and patch, tree-changing git commands, PowerShell file cmdlets, and the same inside sh -c, cmd /c, pwsh -Command).
+// Exit 2 = block, and stderr is shown to the agent.
 // Works with Claude Code (tool_input) and the Copilot harness (tool_input via the PreToolUse alias, or toolArgs),
 // which also reads the JSON deny decision printed to stdout.
 const fs = require("fs");
@@ -16,6 +17,8 @@ const WRITERS = new Set(["rm", "mv", "cp", "touch", "mkdir", "rmdir", "truncate"
   "clear-content", "ni", "ri", "del", "erase", "move", "copy", "ren", "rd", "md", "sc", "ac"]);
 const GIT_WRITERS = new Set(["apply", "am", "checkout", "switch", "restore", "reset", "stash", "clean", "mv", "rm",
   "merge", "rebase", "cherry-pick", "revert", "pull"]);
+const SHELLS = new Set(["bash", "sh", "zsh", "dash", "ksh"]);
+const SC_EXE = /^(query|queryex|qc|qdescription|start|stop|pause|continue|config|create|delete|description|failure|sdshow)$/i;
 // Tool names that can change files, across Claude Code (Edit, Bash), Copilot CLI (edit, create, bash) and VS Code
 // (replace_string_in_file, create_file, run_in_terminal). Read tools (Read, view, grep, read_file, …) pass straight through,
 // because not every harness applies the hook's matcher.
@@ -35,9 +38,14 @@ function parse(cmd) {
   for (let i = 0; i < cmd.length; i++) {
     const c = cmd[i];
     if (c === "'" || c === '"') {
-      const close = cmd.indexOf(c, i + 1);
-      const j = close < 0 ? cmd.length : close;
-      word = (word ?? "") + cmd.slice(i + 1, j);
+      // Inside double quotes, \" \\ \$ and \` stand for the character itself (sh); a Windows path's \ stays as is
+      let j = i + 1;
+      let s = "";
+      while (j < cmd.length && cmd[j] !== c) {
+        if (c === '"' && cmd[j] === "\\" && /["\\$`]/.test(cmd[j + 1] || "")) j++;
+        s += cmd[j++];
+      }
+      word = (word ?? "") + s;
       i = j;
     } else if (c !== "\n" && /\s/.test(c)) end();
     else if (c === ";" || c === "|" || c === "&" || c === "\n") {
@@ -87,11 +95,41 @@ function shellTarget(command, cwd, inProject, depth = 0) {
         if (hit) return hit;
       }
     }
+    if (SHELLS.has(name)) {
+      // bash -c "cmd", sh -ec "cmd": the word after the flag is the script; later words are its $0, $1, …
+      const k = rest.findIndex((w) => /^-[a-z]*c[a-z]*$/i.test(w));
+      if (k >= 0 && rest[k + 1]) {
+        const hit = shellTarget(rest[k + 1], cwd, inProject, depth + 1);
+        if (hit) return hit;
+      }
+      continue;
+    }
+    if (name === "xargs") {
+      // The files come from stdin, so any writer run through xargs in the project counts
+      let j = 0;
+      while (j < rest.length && rest[j].startsWith("-")) j += /^-[IinPLdEsa]$/.test(rest[j]) ? 2 : 1;
+      const inner = path.basename(rest[j] || "").toLowerCase().replace(/\.exe$/, "");
+      const writes = WRITERS.has(inner) || ((inner === "sed" || inner === "perl") && rest.some((w) => /^-\w*i/.test(w)));
+      if (writes && inProject(cwd)) return `xargs ${inner}`;
+      continue;
+    }
     if (name === "cd" || name === "set-location" || name === "pushd") {
       if (rest[0]) cwd = path.resolve(cwd, rest[0]);
+    } else if (name === "sc" && SC_EXE.test(rest[0] || "")) {
+      continue; // sc.exe (Windows services), not the Set-Content alias
     } else if (WRITERS.has(name)) {
       const hit = rest.map((w) => bad(w, cwd)).find(Boolean);
       if (hit) return hit;
+    } else if (name === "find" && rest.some((w) => /^-(delete|exec|execdir|ok|okdir)$/.test(w))) {
+      const execs = rest.map((w, k) => (/^-(exec|execdir|ok|okdir)$/.test(w) ? rest[k + 1] : null)).filter(Boolean);
+      if (rest.includes("-delete") || execs.some((w) => WRITERS.has(path.basename(w).toLowerCase()))) {
+        const k = rest.findIndex((w) => /^[-(!]/.test(w));
+        const roots = rest.slice(0, k < 0 ? rest.length : k);
+        const hit = (roots.length ? roots : ["."]).map((w) => bad(w, cwd)).find(Boolean);
+        if (hit) return hit;
+      }
+    } else if (name === "patch" && !rest.includes("--dry-run") && inProject(cwd)) {
+      return "patch";
     } else if ((name === "sed" || name === "perl") && rest.some((w) => /^-\w*i/.test(w) || w === "--in-place")) {
       // Files are the non-flag words, minus the script: the word after -e/-f, else the first one
       const files = rest.filter((w, k) => !w.startsWith("-") && !/^-\w*[ef]$/.test(rest[k - 1] || ""));
@@ -100,9 +138,14 @@ function shellTarget(command, cwd, inProject, depth = 0) {
       if (hit) return hit;
     } else if (name === "git") {
       let j = 0;
-      while (j < rest.length && rest[j].startsWith("-")) j += /^-[Cc]$/.test(rest[j]) ? 2 : 1;
+      let dir = cwd;
+      while (j < rest.length && rest[j].startsWith("-")) {
+        if (/^-C$/.test(rest[j]) && rest[j + 1]) dir = path.resolve(dir, rest[j + 1]);
+        j += /^-[Cc]$/.test(rest[j]) ? 2 : 1;
+      }
       const readOnly = rest[j] === "stash" && /^(list|show)$/.test(rest[j + 1] || "");
-      if (GIT_WRITERS.has(rest[j]) && !readOnly) return `git ${rest[j]}`;
+      // Another repo (git -C ../other, or after cd) isn't gated
+      if (GIT_WRITERS.has(rest[j]) && !readOnly && inProject(dir)) return `git ${rest[j]}`;
     }
   }
   return null;
@@ -125,7 +168,9 @@ function main(data) {
   if (!drafts.length) return 0;
 
   const inside = (dir, p) => {
-    const rel = path.relative(dir, p);
+    // macOS file systems are case-insensitive by default (path.relative already ignores case on Windows)
+    const fold = (s) => (process.platform === "darwin" ? s.toLowerCase() : s);
+    const rel = path.relative(fold(dir), fold(p));
     return !rel.startsWith("..") && !path.isAbsolute(rel);
   };
   // Only files in this project are gated, and the workflow's own folder (plans, standards) is always editable

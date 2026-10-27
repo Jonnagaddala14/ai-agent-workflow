@@ -37,6 +37,8 @@ test("parse splits commands and marks redirect targets", () => {
     ["ls"],
   ]);
   assert.deepEqual(parse("a\nb"), [["a"], ["b"]]);
+  assert.deepEqual(parse(`echo "a\\"b" > x`), [["echo", 'a"b', { to: "x" }]]);
+  assert.deepEqual(parse(`type "C:\\dir\\f.txt"`), [["type", "C:\\dir\\f.txt"]]);
 });
 
 test("edit tools: code is blocked, the workflow folder and outside files aren't", () => {
@@ -66,6 +68,13 @@ test("shell commands that write project files are blocked", () => {
     "mv a.js b.js",
     "Set-Content -Path src/a.txt -Value x",
     "Remove-Item src/a.txt",
+    'bash -c "echo x > src/a.js"',
+    "sh -ec 'rm src/a.js'",
+    'echo "a\\"b" > src/x.js',
+    "find . -name '*.tmp' -delete",
+    "find src -name '*.js' -exec rm {} +",
+    "xargs rm < files.txt",
+    "patch -p1 < fix.diff",
   ]) {
     assert.equal(run(root, { command }).status, 2, command);
   }
@@ -85,6 +94,12 @@ test("read-only shell commands and writes outside the project pass", () => {
     "ls | head -5",
     "Get-ChildItem 2>$null",
     "sed 's/a/b/' src/a.js",
+    "sc query wuauserv",
+    "git -C ../other checkout main",
+    "cd .. && git checkout main",
+    "find . -name '*.js'",
+    "bash -c 'git status'",
+    "patch --dry-run -p1 < fix.diff",
   ]) {
     assert.equal(run(root, { command }).status, 0, command);
   }

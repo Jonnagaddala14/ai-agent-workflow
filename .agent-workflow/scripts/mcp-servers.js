@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Lists the MCP servers a repo configures, one line each, so the agent knows which tools it could connect
 // without reading the config files itself. Prints names, kind (stdio/http) and a short hint only; env values,
-// headers, URLs and command arguments stay out of the agent's context, because they often hold secrets.
+// headers, URLs and command arguments (except the package a runner such as npx starts) stay out of the agent's
+// context, because they often hold secrets.
 // Usage: node .agent-workflow/scripts/mcp-servers.js [repo-root]
 const fs = require("fs");
 const path = require("path");
@@ -31,10 +32,24 @@ const kindOf = (s) => {
   if (s.command) return "stdio";
   return "unknown";
 };
-// A hint that helps the agent guess what the server is for, without exposing arguments or tokens
+// Package runners: the package they start names the server (the first non-flag argument, or the value of -p/--package)
+const RUNNERS = /^(npx|pnpx|bunx|uvx|pipx|dlx|pnpm|yarn)$/i;
+const PACKAGE = /^(@[\w.-]+\/)?[\w.-]+(@[\w.^~<>=*-]+)?$/;
+const packageOf = (args) => {
+  if (!Array.isArray(args)) return "";
+  const a = args.map(String);
+  const k = a.findIndex((w) => w === "-p" || w === "--package");
+  const pkg = k >= 0 ? a[k + 1] : a.find((w) => !w.startsWith("-") && !/^(run|dlx|exec)$/.test(w));
+  return pkg && PACKAGE.test(pkg) ? pkg : "";
+};
+// A hint that helps the agent guess what the server is for, without exposing other arguments or tokens
 const hintOf = (s) => {
   if (!s || typeof s !== "object") return "";
-  if (s.command) return `command ${path.basename(String(s.command))}`;
+  if (s.command) {
+    const cmd = path.basename(String(s.command));
+    const pkg = RUNNERS.test(cmd.replace(/\.(cmd|exe)$/i, "")) ? packageOf(s.args) : "";
+    return `command ${cmd}${pkg ? ` ${pkg}` : ""}`;
+  }
   const url = s.url || s.serverUrl;
   if (url) {
     try {
