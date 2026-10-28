@@ -1,4 +1,5 @@
 ---
+disable-model-invocation: true
 description: Understand requirements, gather context, write a compact plan, get approval. No code changes.
 argument-hint: <requirement, bug, ticket key, or empty to pick from the tracker>
 ---

@@ -29,9 +29,11 @@ function parseJsonc(text) {
   return JSON.parse(noComments.replace(/,(\s*[}\]])/g, "$1"));
 }
 
+// Only known transport names are printed: a `type` holding anything else (even a plain word like a token) isn't shown
+const KINDS = /^(stdio|http|https|sse|streamable-?http|ws|websocket|local|remote)$/i;
 const kindOf = (s) => {
   if (!s || typeof s !== "object") return "unknown";
-  if (s.type) return String(s.type);
+  if (s.type) return KINDS.test(String(s.type)) ? String(s.type).toLowerCase() : "other";
   if (s.url || s.serverUrl) return "http";
   if (s.command) return "stdio";
   return "unknown";
@@ -57,7 +59,10 @@ const packageOf = (args) => {
 const hintOf = (s) => {
   if (!s || typeof s !== "object") return "";
   if (s.command) {
-    const cmd = path.basename(String(s.command));
+    // Only a plain executable name is shown (the basename, so the folders before it never are). A whole command line
+    // ("env TOKEN=… npx server") isn't a plain name and can carry secrets.
+    const cmd = String(s.command).split(/[\\/]/).pop(); // either separator: a config written on Windows is read anywhere
+    if (!/^[\w.+-]+$/.test(cmd)) return "command set";
     const pkg = RUNNERS.test(cmd.replace(/\.(cmd|exe)$/i, "")) ? packageOf(s.args) : "";
     return `command ${cmd}${pkg ? ` ${pkg}` : ""}`;
   }
@@ -81,7 +86,10 @@ for (const [rel, tool] of FILES) {
   try {
     cfg = parseJsonc(fs.readFileSync(p, "utf8"));
   } catch {
-    unreadable.push(rel);
+    cfg = null;
+  }
+  if (!cfg || typeof cfg !== "object" || Array.isArray(cfg)) {
+    unreadable.push(rel); // invalid JSON, or valid JSON that isn't an object (null, a list, a string)
     continue;
   }
   // VS Code: { servers }, also { mcp: { servers } } in settings.json; Claude/Cursor/Copilot: { mcpServers }

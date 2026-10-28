@@ -90,12 +90,13 @@ test("mcp-servers lists names and kinds from each tool's config, never secrets",
     ".vscode/mcp.json": `{\n  // jira\n  "servers": { "jira": { "type": "http", "url": "https://jira.example.com/mcp", "headers": { "Authorization": "Bearer s3cret" } }, },\n}`,
     ".mcp.json": JSON.stringify({ mcpServers: { figma: { command: "npx", args: ["-y", "figma-mcp", "--token", "t0ken"], env: { FIGMA_TOKEN: "t0ken" } } } }),
     ".cursor/mcp.json": "{ broken",
+    ".windsurf/mcp.json": "null",
   });
   const out = script(dir, "mcp-servers.js").stdout;
   assert.match(out, /configured in this repo \(2\)/);
   assert.match(out, /- jira \(http, host jira\.example\.com\) — \.vscode\/mcp\.json \[VS Code\]/);
   assert.match(out, /- figma \(stdio, command npx figma-mcp\) — \.mcp\.json \[Claude Code\]/);
-  assert.match(out, /Could not parse: \.cursor\/mcp\.json/);
+  assert.match(out, /Could not parse: \.cursor\/mcp\.json, \.windsurf\/mcp\.json/);
   assert.doesNotMatch(out, /s3cret|t0ken|Bearer/);
   assert.match(script(repo(), "mcp-servers.js").stdout, /none/);
   // A flag's value is never mistaken for the package name
@@ -111,6 +112,27 @@ test("mcp-servers lists names and kinds from each tool's config, never secrets",
   assert.match(out2, /- git \(stdio, command uvx mcp-server-git\)/);
   assert.match(out2, /- docs \(stdio, command npx @org\/docs-mcp\)/);
   assert.doesNotMatch(out2, /s3cr3t|k3y|\bserve\b/);
+  // An inline command line, or an odd `type`, is never printed whole
+  const inline = repo({
+    ".mcp.json": JSON.stringify({ mcpServers: {
+      gh: { command: "env GITHUB_TOKEN=ghp_LEAK1 npx server" },
+      win: { command: "C:\\Program Files\\nodejs\\npx.cmd", args: ["-y", "some-mcp"] },
+      odd: { type: "sk-LEAK2", url: "https://x.example.com/mcp" },
+    } }),
+  });
+  const out3 = script(inline, "mcp-servers.js").stdout;
+  assert.match(out3, /- gh \(stdio, command set\)/);
+  assert.match(out3, /- win \(stdio, command npx\.cmd some-mcp\)/);
+  assert.match(out3, /- odd \(other, host x\.example\.com\)/);
+  assert.doesNotMatch(out3, /LEAK|GITHUB_TOKEN/);
+});
+
+test("repo-map shows git's error when git refuses the repo", () => {
+  const dir = repo({ "src/a.js": "\n" });
+  git(dir, "config", "core.repositoryformatversion", "99");
+  const out = script(dir, "repo-map.js").stdout;
+  assert.match(out, /\(git failed: fatal: .*99.*; listed without git\)/);
+  assert.doesNotMatch(out, /not a git repo/);
 });
 
 test("pr-threads shows review summaries on the head only, unless --all", () => {

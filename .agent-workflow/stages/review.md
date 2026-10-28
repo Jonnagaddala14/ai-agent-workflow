@@ -38,7 +38,7 @@ Requirements come from the plan's acceptance criteria. For a PR without a plan, 
   2. Security (input validation, secrets, injection, authorization).
   3. Architecture (layering, dependency direction, module boundaries).
   4. Error handling and logging.
-  5. Tests cover the change.
+  5. Tests cover the change. Behaviour changed with no test and no stated reason is **should-fix**, when the repo has a test setup.
   6. Performance hot spots.
   7. Simpler or better approaches.
 - Don't comment on anything a linter or formatter enforces. Run the repo's lint on the changed files instead, if it's cheap, and report only the failures.

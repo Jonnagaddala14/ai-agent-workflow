@@ -1,4 +1,5 @@
 ---
+disable-model-invocation: true
 description: Address a PR's unresolved review comments (or a saved review file) — propose an action per comment, get consent, fix.
 argument-hint: <PR number | .agent-workflow/plans/<…>.review.md>
 ---

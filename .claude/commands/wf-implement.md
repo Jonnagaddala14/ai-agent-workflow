@@ -1,4 +1,5 @@
 ---
+disable-model-invocation: true
 description: Implement an approved plan in a fresh session, then verify.
 argument-hint: <.agent-workflow/plans/task-slug.md>
 ---

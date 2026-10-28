@@ -17,7 +17,7 @@
    - For a bug: find the root cause (`file:line`) and the shortest reproduction (a failing test or command) before writing the plan. A plan without a root cause is a guess.
 5. **Plan:**
    - **Full form:** about 40 lines, self-contained. Recommend an approach and list 1–2 alternatives with why they lost. If the user's requested approach has a clearly better option, say so. If it won't fit in about 40 lines, split "Steps" into `### [ ] Milestone N` headings, one session each.
-   - **Quick form** (bug fixes and small changes): about 15 lines. Keep the header, `Status`, `Goal` (with the root cause and `Sources`), `Files to touch`, `Acceptance criteria` (the reproduction, now passing, plus no regression), `Steps` and `Verify`. Drop the other sections. Add `Tier: quick` under the status line.
+   - **Quick form** (bug fixes and small changes): about 15 lines. Keep the header, `Status`, `Goal` (with the root cause and `Sources`), `Files to touch`, `Acceptance criteria` (the reproduction, now passing, plus no regression), `Steps` and `Verify`. Drop the other sections. Add `Tier: quick` under the status line. Steps must include a test step, or one line saying why none applies.
    - In "Files to touch", mark files that don't exist yet `(new)`.
    - Every requirement becomes a testable acceptance criterion.
 6. **Consent gate:** show the plan and **STOP**. Revise it until the user explicitly approves. Then set `Status: APPROVED (<date>)`. Run `node .agent-workflow/scripts/snapshot.js <slug>-base` and record its output as `Base snapshot`. (Later stages set `IMPLEMENTED`, then `DONE`; an abandoned plan becomes `ABANDONED`.)

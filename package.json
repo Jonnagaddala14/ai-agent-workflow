@@ -1,12 +1,12 @@
 {
   "name": "ai-agent-workflow",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "private": true,
   "description": "Token-efficient plan → implement → review → fix workflow for Claude Code and GitHub Copilot",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test test/"
+    "test": "node --test"
   }
 }

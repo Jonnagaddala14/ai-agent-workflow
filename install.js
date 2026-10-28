@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Installs, upgrades or uninstalls the workflow kit in a target repo. Run with --help for the options.
 // Everything goes into .agent-workflow/, plus the small entry files each tool only looks for in fixed places
-// (.claude/commands, .claude/agents, .claude/rules, .claude/settings.local.json, .github/prompts, .github/agents,
+// (.claude/commands, .claude/agents, .claude/rules, .claude/settings.local.json, .github/skills, .github/agents,
 // .github/hooks, .github/instructions). All of it is git-ignored, so nothing is committed and no committed file is edited.
 // Records what it installed in .agent-workflow/manifest.json, so upgrades update untouched files, skip files
 // you've edited, and remove files a newer kit no longer ships. Never touches STANDARDS.md or plans/.
@@ -69,7 +69,15 @@ const dry = flag("--dry-run");
 const VERSION = fs.readFileSync(path.join(KIT, "VERSION"), "utf8").trim();
 const MANIFEST = path.join(T, DIR, "manifest.json");
 const toPosix = (p) => p.split(path.sep).join("/");
-const HOOK_MATCHER = "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell";
+// Tools that can change files. Claude Code matches these names as a regex. The Copilot harness, on a `PreToolUse`
+// entry, fires when a token equals the runtime tool name or its Claude name (edit → Edit, create → Write, bash → Bash),
+// and tools with no Claude equivalent (VS Code's replace_string_in_file, run_in_terminal, …) keep their runtime names,
+// so those are listed too. The hook itself also filters by tool name, for harnesses that ignore the matcher.
+const HOOK_MATCHER = [
+  "Edit", "Write", "MultiEdit", "NotebookEdit", "Bash", "PowerShell",
+  "edit", "create", "apply_patch", "str_replace_editor", "bash", "powershell",
+  "replace_string_in_file", "multi_replace_string_in_file", "insert_edit_into_file", "create_file", "edit_notebook_file", "run_in_terminal",
+].join("|");
 // One hook command for both tools, with the script's absolute path (the Copilot harness has no project-dir variable
 // and may run hooks from another cwd; `$VAR` only expands in sh-like shells). On Windows, bare `node`: a quoted
 // node.exe path is a parse error in PowerShell. Elsewhere, node's absolute path: an editor started from the dock often
@@ -101,11 +109,16 @@ const write = (p, s) => {
   fs.mkdirSync(path.dirname(p), { recursive: true });
   fs.writeFileSync(p, s);
 };
-// Removes a file, then the directories that left empty, up to the repo root
+const within = (p) => {
+  const rel = path.relative(T, p);
+  return !!rel && !rel.startsWith("..") && !path.isAbsolute(rel);
+};
+// Removes a file, then the directories that left empty, up to the repo root. Never anything outside the repo.
 const remove = (p) => {
   if (dry) return;
+  if (!within(p)) throw new Error(`refusing to remove ${p}: outside ${T}`);
   fs.rmSync(p);
-  for (let d = path.dirname(p); d !== T && fs.readdirSync(d).length === 0; d = path.dirname(d)) fs.rmdirSync(d);
+  for (let d = path.dirname(p); within(d) && fs.readdirSync(d).length === 0; d = path.dirname(d)) fs.rmdirSync(d);
 };
 // Line endings are ignored, so git's CRLF conversion on Windows doesn't count as a local edit
 const hash = (buf) => crypto.createHash("sha256").update(buf.toString("utf8").replace(/\r\n/g, "\n")).digest("hex");
@@ -117,8 +130,15 @@ const git = (...a) => {
   }
 };
 
-// Ignore rules, the hook and snapshots all assume the target is the repo root
-const top = git("rev-parse", "--show-toplevel");
+// Ignore rules, the hook and snapshots all assume the target is the repo root. "Not a git repository" (or no git at
+// all) is a plain folder; any other git error (e.g. "dubious ownership") would silently skip the ignore rules, so stop.
+let top = null;
+try {
+  top = execFileSync("git", ["-C", T, "rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+} catch (e) {
+  const msg = String(e.stderr || "").trim();
+  if (e.code !== "ENOENT" && !/not a git repository/i.test(msg)) fail(`git can't open ${T}:\n${msg || e.message}\nFix that first, then re-run.`);
+}
 if (top && !same(top, T)) fail(`Target is inside the git repo at ${path.resolve(top)}. Install at the repo root instead.`);
 
 let old = { files: {} };
@@ -128,6 +148,19 @@ try {
   log.push("  warning    manifest unreadable; treating all existing kit files as edited");
 }
 if (!old || typeof old.files !== "object" || old.files === null) old = { ...old, files: {} };
+// Only paths the kit can have installed are trusted from the manifest, so an edited or pulled manifest can't make
+// an upgrade or --uninstall touch anything else (../file, /etc/…, the team's .github/workflows, your standards or plans)
+const { ENTRY_PATTERNS, isEntryFile } = require(path.join(KIT, DIR, "scripts", "kit-files.js"));
+const SETTINGS = ".claude/settings.local.json";
+const kitPath = (rel) =>
+  typeof rel === "string" &&
+  !/[\\:]/.test(rel) &&
+  !rel.split("/").some((s) => s === "" || s === "." || s === "..") &&
+  ((rel.startsWith(`${DIR}/`) && !/^\.agent-workflow\/(STANDARDS\.md|manifest\.json|plans\/)/.test(rel)) ||
+    (isEntryFile(rel) && rel !== SETTINGS));
+const dropped = Object.keys(old.files).filter((rel) => !kitPath(rel));
+for (const rel of dropped) delete old.files[rel];
+if (dropped.length) log.push(`  warning    manifest lists ${dropped.length} path(s) the kit never installs; ignored: ${dropped.join(", ")}`);
 const installed = {};
 const skipped = [];
 const saveManifest = (files) => write(MANIFEST, JSON.stringify({ version: VERSION, skipped, files }, null, 2) + "\n");
@@ -144,7 +177,6 @@ function findHook(settings) {
   const mine = pre.flatMap((e) => e.hooks || []).find((h) => String(h.command).includes("plan-gate.js"));
   return { mine, entry: pre.find((e) => (e.hooks || []).includes(mine)) };
 }
-const SETTINGS = ".claude/settings.local.json";
 // Parsed settings, or null (noted as skipped) when it can't be changed safely
 function readSettings(p) {
   try {
@@ -256,7 +288,9 @@ const own = (f) => !/^\.agent-workflow\/(STANDARDS\.md|manifest\.json|plans\/)/.
 const kitFiles = [
   ...walk(DIR).filter(own),
   ...(claude ? pick(".claude/commands", /^wf.*\.md$/) : []),
-  ...(copilot ? [...pick(".github/prompts", /^wf.*\.prompt\.md$/), ...pick(".github/agents", /^wf.*\.agent\.md$/)] : []),
+  ...(copilot
+    ? [...walk(".github/skills").filter((f) => /^\.github\/skills\/wf[^/]*\/SKILL\.md$/.test(f)), ...pick(".github/agents", /^wf.*\.agent\.md$/)]
+    : []),
 ];
 kitFiles.forEach((rel) => copy(rel));
 
@@ -269,8 +303,9 @@ const forTool = (text, tool) =>
       return !m ? [l] : m[1] === tool ? [l.slice(0, m.index)] : [];
     })
     .join("\n");
-// Generated files are built from the installed copies, so local edits to them reach both tools on the next install
-const installedText = (rel) => read(path.join(T, rel)) || read(path.join(KIT, rel));
+// Generated files are built from the installed copy when it was kept with local edits (so those reach both tools), else
+// from the kit's, which the installed copy now matches. The latter also keeps --dry-run truthful about what would change.
+const installedText = (rel) => (skipped.includes(rel) ? read(path.join(T, rel)) : read(path.join(KIT, rel)));
 
 // The core rules, always loaded by each tool
 const core = installedText(`${DIR}/AGENT_WORKFLOW.md`).trim();
@@ -301,7 +336,8 @@ if (copilot) {
 const entryFiles = [...kitFiles, ...agentFiles, ...(claude ? [RULES] : []), ...(copilot ? [INSTR, COPILOT_HOOK_FILE] : [])];
 
 // Remove files an older kit version installed that this version no longer ships
-const COPILOT_DIRS = [".github/prompts/", ".github/agents/", ".github/hooks/"];
+// .github/prompts/ held the Copilot commands before 0.6.1 (now .github/skills/)
+const COPILOT_DIRS = [".github/skills/", ".github/prompts/", ".github/agents/", ".github/hooks/"];
 const otherTool = (rel) =>
   (!claude && rel.startsWith(".claude/")) || (!copilot && (COPILOT_DIRS.some((d) => rel.startsWith(d)) || rel === INSTR));
 for (const [rel, h] of Object.entries(old.files || {})) {
@@ -320,6 +356,7 @@ for (const [rel, h] of Object.entries(old.files || {})) {
     remove(dst);
     note("removed", rel, "no longer part of the kit");
   } else {
+    installed[rel] = h; // still the kit's to remove later (--uninstall --force), and still covered by the ignore rules
     note("kept", rel, `no longer part of the kit, but edited locally; move your edits into ${DIR}/ and delete it`);
   }
 }
@@ -350,7 +387,6 @@ if (claude) {
 }
 
 // Ignore everything the kit puts in the repo. Default: .git/info/exclude, which is local and never committed.
-const { ENTRY_PATTERNS } = require(path.join(KIT, DIR, "scripts", "kit-files.js"));
 const IGNORE = [`/${DIR}/*`, ...ENTRY_PATTERNS];
 const BLOCK = `# ai-agent-workflow:start (managed by install.js)\n${IGNORE.join("\n")}\n# ai-agent-workflow:end\n`;
 const [useRel, otherRel] = flag("--gitignore") ? [".gitignore", excludeRel] : [excludeRel, ".gitignore"];

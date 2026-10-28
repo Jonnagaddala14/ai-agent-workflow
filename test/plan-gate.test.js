@@ -77,6 +77,23 @@ test("shell commands that write project files are blocked", () => {
     "xargs -i rm {} < files.txt",
     "xargs -I{} rm {} < files.txt",
     "patch -p1 < fix.diff",
+    "if [ -f src/a.js ]; then rm src/a.js; fi",
+    "for f in a b; do rm src/x.js; done",
+    "(rm src/a.js)",
+    "(cd src && rm a.js)",
+    "{ rm src/a.js; }",
+    "sudo rm src/a.js",
+    "sudo -u bob rm src/a.js",
+    "env A=1 rm src/a.js",
+    "nohup rm src/a.js",
+    "time rm src/a.js",
+    "! rm src/a.js",
+    "echo $(rm src/a.js)",
+    'echo "$(rm src/a.js)"',
+    "echo `rm src/a.js`",
+    "sed --in-place=bak 's/a/b/' src/a.js",
+    "find . \\( -name '*.tmp' -o -name '*.bak' \\) -delete",
+    "if (Test-Path src/a.txt) { Remove-Item src/a.txt }",
   ]) {
     assert.equal(run(root, { command }).status, 2, command);
   }
@@ -102,6 +119,13 @@ test("read-only shell commands and writes outside the project pass", () => {
     "find . -name '*.js'",
     "bash -c 'git status'",
     "patch --dry-run -p1 < fix.diff",
+    "if [ -f src/a.js ]; then echo yes; fi",
+    "(cd .. && git checkout main)",
+    "command -v rm",
+    "sudo -u bob ls src",
+    "echo $(git status --short)",
+    "find . \\( -name '*.js' -o -name '*.ts' \\) -print",
+    "sed -n '1,5p' src/a.js",
   ]) {
     assert.equal(run(root, { command }).status, 0, command);
   }
@@ -119,6 +143,10 @@ test("Copilot harness payloads are understood, and a JSON deny decision is print
     { cwd: root, toolName: "powershell", toolArgs: { command: "Set-Content src/a.txt x" } },
     { cwd: root, toolName: "apply_patch", toolArgs: { input: "*** Begin Patch\n*** Update File: src/app.js\n@@\n-a\n+b\n*** End Patch\n" } },
     { cwd: root, toolName: "multi_replace_string_in_file", toolArgs: { replacements: [{ filePath: ".agent-workflow/STANDARDS.md" }, { filePath: path.join(root, "src/app.js") }] } },
+    // str_replace_editor carries a `command` that isn't a shell command; the file is in `path`
+    { cwd: root, tool_name: "Edit", tool_input: { command: "str_replace", path: "src/app.js", old_str: "a", new_str: "b" } },
+    { cwd: root, tool_name: "Write", tool_input: { command: "create", path: path.join(root, "src/new.js"), file_text: "x" } },
+    { cwd: root, toolName: "str_replace_editor", toolArgs: { command: "insert", path: "src/app.js", insert_line: 1, new_str: "x" } },
   ]) {
     const r = raw(data);
     assert.equal(r.status, 2, JSON.stringify(data));
@@ -129,6 +157,24 @@ test("Copilot harness payloads are understood, and a JSON deny decision is print
   assert.equal(raw({ cwd: root, toolName: "edit", toolArgs: "not json" }).status, 0);
   assert.equal(raw({ cwd: root, toolName: "edit", toolArgs: { path: ".agent-workflow/plans/add-login.md" } }).status, 0);
   assert.equal(raw({ cwd: root, toolName: "apply_patch", toolArgs: { input: "*** Begin Patch\n*** Add File: .agent-workflow/STANDARDS.md\n+x\n*** End Patch\n" } }).status, 0);
+  assert.equal(raw({ cwd: root, tool_name: "Edit", tool_input: { command: "view", path: ".agent-workflow/plans/add-login.md" } }).status, 0);
+  assert.equal(raw({ cwd: root, toolName: "str_replace_editor", toolArgs: { command: "view", path: "src/app.js" } }).status, 0);
+  assert.equal(raw({ cwd: root, tool_name: "Edit", tool_input: { command: "str_replace", path: path.join(os.tmpdir(), "elsewhere.txt") } }).status, 0);
+});
+
+test("the project reached through a link (or a short name) is still the project", () => {
+  const root = project();
+  const link = path.join(tmp(), "link");
+  fs.symlinkSync(root, link, "junction");
+  // CLAUDE_PROJECT_DIR and the hook's own location name the real path; the harness may pass the other one
+  assert.equal(run(root, { file_path: path.join(link, "src/app.js") }).status, 2);
+  const viaLink = spawnSync(process.execPath, [HOOK], {
+    input: JSON.stringify({ cwd: link, tool_input: { command: "echo x > src/a.js" } }),
+    env: { ...process.env, CLAUDE_PROJECT_DIR: root },
+    encoding: "utf8",
+  });
+  assert.equal(viaLink.status, 2);
+  assert.equal(run(root, { file_path: path.join(link, ".agent-workflow/STANDARDS.md") }).status, 0);
 });
 
 test("only plan headers count as DRAFT", () => {

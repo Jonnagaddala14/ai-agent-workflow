@@ -1,6 +1,7 @@
 ---
+disable-model-invocation: true
 description: Generate STANDARDS.md by analysing the codebase (first time), or refresh it with --refresh.
-argument-hint: [--refresh]
+argument-hint: "[--refresh]"
 ---
 Options: $ARGUMENTS
 

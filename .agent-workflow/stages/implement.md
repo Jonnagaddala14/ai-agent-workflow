@@ -7,6 +7,7 @@
 3. **Milestones:** if the plan has them, do only the first unticked one. For milestone 2 onwards, first run `node .agent-workflow/scripts/snapshot.js <slug>-m<N>` and add `- Milestone N base: <output>` under the plan's `Base snapshot` line, so its review covers only this milestone.
 4. Do the steps in order and tick them off in the plan.
    - Match the existing code style and `.agent-workflow/STANDARDS.md`.
+   - If the change adds or alters behaviour, add or update tests in the repo's existing test style. If the plan has no test step, say so and add one.
    - No changes outside the plan. Read other code only when a step needs it.
    - If a step can't be done as written, stop and report why. Don't improvise.
 5. Run the plan's verify commands.

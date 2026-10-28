@@ -1,6 +1,7 @@
 ---
+disable-model-invocation: true
 description: Review a plan's diff, local changes, or a GitHub PR against requirements, code, and STANDARDS.md.
-argument-hint: [.agent-workflow/plans/<slug>.md | PR number/URL] [--post]
+argument-hint: "[.agent-workflow/plans/<slug>.md | PR number/URL] [--post]"
 ---
 Target: $ARGUMENTS
 

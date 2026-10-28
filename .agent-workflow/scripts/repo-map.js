@@ -30,11 +30,15 @@ const NOISE = /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|
 // The kit's entry files and the team's Claude settings, so they don't show up as areas or samples of the project
 const KIT = (f) => isEntryFile(f) || f === ".claude/settings.json";
 
+// Why the last git call failed, when it wasn't "not a git repository" (or git missing): e.g. "dubious ownership"
+let gitError = null;
 const sh = (cmd, args) => {
   if (cmd === "git") args = ["-c", "core.quotePath=false", ...args]; // print non-ASCII paths as-is
   try {
-    return execFileSync(cmd, args, { cwd: root, encoding: "utf8", maxBuffer: 100e6, stdio: ["ignore", "pipe", "ignore"] });
-  } catch {
+    return execFileSync(cmd, args, { cwd: root, encoding: "utf8", maxBuffer: 100e6, stdio: ["ignore", "pipe", "pipe"] });
+  } catch (e) {
+    const msg = String(e.stderr || "").trim();
+    if (cmd === "git" && e.code !== "ENOENT" && msg && !/not a git repository/i.test(msg)) gitError = msg.split("\n")[0];
     return null;
   }
 };
@@ -68,7 +72,7 @@ const inc = (m, k) => m.set(k, (m.get(k) || 0) + 1);
 const listed = listFiles();
 const git = listed.git;
 const files = listed.files.filter((f) => !KIT(f));
-const out = [`Repo: ${path.basename(root)} — ${files.length} files${git ? "" : " (not a git repo)"}`];
+const out = [`Repo: ${path.basename(root)} — ${files.length} files${git ? "" : gitError ? ` (git failed: ${gitError}; listed without git)` : " (not a git repo)"}`];
 
 // Area = deepest directory (depth ≤ 4) with a project manifest, else the top-level directory
 const projectDirs = [...new Set(files.filter((f) => PROJECT.test(path.basename(f)) && f.includes("/") && f.split("/").length <= 5)

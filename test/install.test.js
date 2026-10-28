@@ -34,13 +34,17 @@ test("fresh install writes the kit, entry files, hook, ignore rules and manifest
   assert.equal(m.partial, undefined);
   assert.equal(Object.keys(m.files).length, 36);
   for (const rel of [".agent-workflow/AGENT_WORKFLOW.md", ".agent-workflow/scripts/mcp-servers.js", ".claude/commands/wf.md",
-    ".claude/rules/agent-workflow.md", ".claude/agents/wf-reviewer.md", ".github/prompts/wf.prompt.md", ".github/prompts/wf-plan.prompt.md",
+    ".claude/rules/agent-workflow.md", ".claude/agents/wf-reviewer.md", ".github/skills/wf/SKILL.md", ".github/skills/wf-plan/SKILL.md",
     ".github/agents/wf.agent.md", ".github/agents/wf-implementer.agent.md", ".github/agents/wf-reviewer.agent.md",
     ".github/hooks/wf-plan-gate.json", ".github/instructions/agent-workflow.instructions.md"]) {
     assert.ok(exists(dir, rel), rel);
   }
   const hook = JSON.parse(read(dir, ".claude/settings.local.json")).hooks.PreToolUse[0];
   assert.match(hook.matcher, /Bash/);
+  // Copilot runtime names too, since on a PreToolUse entry the harness matches tokens against runtime or Claude names
+  for (const name of ["edit", "create", "bash", "powershell", "str_replace_editor", "replace_string_in_file", "run_in_terminal"]) {
+    assert.ok(hook.matcher.split("|").includes(name), `matcher lacks ${name}`);
+  }
   assert.match(hook.hooks[0].command, /plan-gate\.js/);
   const copilotHook = JSON.parse(read(dir, ".github/hooks/wf-plan-gate.json")).hooks.PreToolUse[0];
   assert.equal(copilotHook.matcher, hook.matcher);
@@ -126,7 +130,7 @@ test("single-tool installs leave the other tool out", () => {
   assert.equal(Object.keys(manifest(a).files).length, 25);
   const b = repo();
   install(b, "--copilot-only");
-  assert.ok(exists(b, ".github/prompts/wf-plan.prompt.md"));
+  assert.ok(exists(b, ".github/skills/wf-plan/SKILL.md"));
   assert.ok(exists(b, ".github/agents/wf.agent.md"));
   assert.ok(exists(b, ".github/hooks/wf-plan-gate.json"));
   assert.ok(!exists(b, ".claude"));
@@ -167,6 +171,38 @@ test("--dry-run reports the changes and writes nothing", () => {
   assert.match(r.stdout, /dry run[\s\S]*added\s+\.agent-workflow\/AGENT_WORKFLOW\.md/);
   assert.deepEqual(fs.readdirSync(dir), [".git"]);
   assert.doesNotMatch(read(dir, ".git/info/exclude"), /ai-agent-workflow/);
+});
+
+test("--dry-run of an upgrade reports the generated files that would change", () => {
+  const dir = repo();
+  install(dir);
+  // An older, unedited install: the core and the files generated from it agree with their manifest fingerprints,
+  // but the kit's core has since changed
+  const core = ".agent-workflow/AGENT_WORKFLOW.md";
+  const rules = ".claude/rules/agent-workflow.md";
+  const instr = ".github/instructions/agent-workflow.instructions.md";
+  const hash = (s) => require("crypto").createHash("sha256").update(s).digest("hex");
+  const older = {
+    [core]: "# older core\n",
+    [rules]: read(dir, rules).split("\n")[0] + "\n# older core\n",
+    [instr]: read(dir, instr).split("\n").slice(0, 4).join("\n") + "\n# older core\n",
+  };
+  const m = manifest(dir);
+  for (const [rel, text] of Object.entries(older)) {
+    fs.writeFileSync(path.join(dir, rel), text);
+    m.files[rel] = hash(text);
+  }
+  fs.writeFileSync(path.join(dir, ".agent-workflow/manifest.json"), JSON.stringify(m));
+  const r = install(dir, "--dry-run");
+  for (const rel of Object.keys(older)) {
+    assert.match(r.stdout, new RegExp(`updated\\s+${rel.replace(/[.]/g, "\\.")}`), rel);
+    assert.equal(read(dir, rel), older[rel]); // nothing written
+  }
+  // An edited core, by contrast, is kept and the generated files follow it
+  fs.writeFileSync(path.join(dir, core), "# my core\n");
+  install(dir);
+  assert.match(read(dir, rules), /# my core/);
+  assert.match(read(dir, instr), /# my core/);
 });
 
 test("--uninstall removes the kit and its hook, and keeps plans, standards and other settings", () => {
@@ -218,6 +254,115 @@ test("upgrade removes files the kit no longer ships, unless edited", () => {
   assert.match(r.stdout, /kept\s+\.agent-workflow\/edited\.md/);
   assert.ok(!exists(dir, ".agent-workflow/old.md"));
   assert.ok(exists(dir, ".agent-workflow/edited.md"));
+});
+
+test("upgrading from prompt files removes them and installs the skills", () => {
+  const dir = repo();
+  install(dir);
+  const m = manifest(dir);
+  const old = ".github/prompts/wf-plan.prompt.md";
+  fs.mkdirSync(path.join(dir, ".github/prompts"), { recursive: true });
+  fs.writeFileSync(path.join(dir, old), "old prompt\n");
+  m.files[old] = require("crypto").createHash("sha256").update("old prompt\n").digest("hex");
+  m.version = "0.5.1";
+  fs.writeFileSync(path.join(dir, ".agent-workflow/manifest.json"), JSON.stringify(m));
+  const r = install(dir);
+  assert.match(r.stdout, /removed\s+\.github\/prompts\/wf-plan\.prompt\.md/);
+  assert.ok(!exists(dir, ".github/prompts"));
+  assert.ok(exists(dir, ".github/skills/wf-plan/SKILL.md"));
+});
+
+test("an edited prompt file from 0.5.x is kept, tracked in the manifest and still ignored", () => {
+  const dir = repo();
+  install(dir);
+  const m = manifest(dir);
+  const rel = ".github/prompts/wf.prompt.md";
+  fs.mkdirSync(path.join(dir, ".github/prompts"), { recursive: true });
+  fs.writeFileSync(path.join(dir, rel), "my edited prompt\n");
+  m.files[rel] = require("crypto").createHash("sha256").update("original prompt\n").digest("hex");
+  m.version = "0.5.1";
+  fs.writeFileSync(path.join(dir, ".agent-workflow/manifest.json"), JSON.stringify(m));
+  assert.match(install(dir).stdout, /kept\s+\.github\/prompts\/wf\.prompt\.md \(no longer part of the kit/);
+  assert.ok(exists(dir, rel));
+  assert.ok(rel in manifest(dir).files);
+  assert.equal(execFileSync("git", ["-C", dir, "status", "--porcelain", "-uall"], { encoding: "utf8" }), "");
+  install(dir, "--uninstall", "--force");
+  assert.ok(!exists(dir, rel));
+});
+
+test("a --claude-only upgrade leaves the old Copilot prompt files alone, and ignored", () => {
+  const dir = repo();
+  install(dir);
+  const m = manifest(dir);
+  const rel = ".github/prompts/wf-plan.prompt.md";
+  fs.mkdirSync(path.join(dir, ".github/prompts"), { recursive: true });
+  fs.writeFileSync(path.join(dir, rel), "old prompt\n");
+  m.files[rel] = require("crypto").createHash("sha256").update("old prompt\n").digest("hex");
+  fs.writeFileSync(path.join(dir, ".agent-workflow/manifest.json"), JSON.stringify(m));
+  install(dir, "--claude-only");
+  assert.ok(exists(dir, rel));
+  assert.equal(execFileSync("git", ["-C", dir, "status", "--porcelain", "-uall"], { encoding: "utf8" }), "");
+});
+
+test("manifest paths outside what the kit installs are never removed", () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "wf-install-"));
+  tmpDirs.push(parent);
+  const dir = path.join(parent, "repo");
+  fs.mkdirSync(dir);
+  execFileSync("git", ["init", "-q", dir]);
+  install(dir);
+  const hash = (s) => require("crypto").createHash("sha256").update(s).digest("hex");
+  // Files whose fingerprints match, so only the path check stands between them and removal
+  const victims = { "../victim.txt": path.join(parent, "victim.txt"), ".github/workflows/ci.yml": path.join(dir, ".github/workflows/ci.yml"),
+    ".agent-workflow/STANDARDS.md": path.join(dir, ".agent-workflow/STANDARDS.md"), [path.join(parent, "abs.txt")]: path.join(parent, "abs.txt") };
+  const m = manifest(dir);
+  for (const [rel, abs] of Object.entries(victims)) {
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, "keep me\n");
+    m.files[rel] = hash("keep me\n");
+  }
+  fs.writeFileSync(path.join(dir, ".agent-workflow/manifest.json"), JSON.stringify(m));
+  const r = install(dir, "--force");
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /warning\s+manifest lists 4 path\(s\) the kit never installs/);
+  for (const abs of Object.values(victims)) assert.ok(fs.existsSync(abs), abs);
+  m.files = { ...manifest(dir).files, ...Object.fromEntries(Object.keys(victims).map((rel) => [rel, hash("keep me\n")])) };
+  fs.writeFileSync(path.join(dir, ".agent-workflow/manifest.json"), JSON.stringify(m));
+  assert.equal(install(dir, "--uninstall", "--force").status, 0);
+  for (const abs of Object.values(victims)) assert.ok(fs.existsSync(abs), abs);
+});
+
+test("a repo git refuses to open is reported, not treated as a plain folder", () => {
+  const dir = repo();
+  execFileSync("git", ["-C", dir, "config", "core.repositoryformatversion", "99"]);
+  const r = install(dir);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /git can't open[\s\S]*99/);
+  assert.ok(!exists(dir, ".agent-workflow"));
+});
+
+test("Claude commands run only when typed, like the Copilot skills", () => {
+  const dir = path.join(KIT, ".claude/commands");
+  for (const f of fs.readdirSync(dir).filter((n) => /^wf.*\.md$/.test(n))) {
+    assert.match(fs.readFileSync(path.join(dir, f), "utf8"), /^---\r?\n(?:.*\r?\n)*?disable-model-invocation: true\r?\n(?:.*\r?\n)*?---/, f);
+    // An unquoted [ starts a YAML list, and "[a] [b]" isn't valid YAML at all
+    assert.doesNotMatch(fs.readFileSync(path.join(dir, f), "utf8"), /^[\w-]+: \[/m, f);
+  }
+});
+
+test("every skill's links resolve, it names itself, and it uses no prompt-file variables", () => {
+  const skills = path.join(KIT, ".github/skills");
+  for (const name of fs.readdirSync(skills)) {
+    const file = path.join(skills, name, "SKILL.md");
+    const text = fs.readFileSync(file, "utf8");
+    assert.match(text, new RegExp(`^---\\r?\\nname: ${name}\\r?\\n`), name);
+    assert.match(text, /\ndisable-model-invocation: true\r?\n/, name);
+    assert.match(text, /\nargument-hint: /, name);
+    assert.doesNotMatch(text, /\$\{input:/, name);
+    for (const [, link] of text.matchAll(/\]\(([^)]+)\)/g)) {
+      assert.ok(fs.existsSync(path.resolve(path.dirname(file), link)), `${name}: ${link}`);
+    }
+  }
 });
 
 test("an older hook entry is updated in place, and a shared entry keeps the user's matcher", () => {

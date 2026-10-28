@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 // PreToolUse hook: while any plan in .agent-workflow/plans/ is still "Status: DRAFT", block edits to files
 // outside .agent-workflow/. Covers the edit tools and the obvious shell writes (redirects, rm/mv/cp, sed -i, find -delete,
-// xargs and patch, tree-changing git commands, PowerShell file cmdlets, and the same inside sh -c, cmd /c, pwsh -Command).
+// xargs and patch, tree-changing git commands, PowerShell file cmdlets, and the same inside sh -c, cmd /c, pwsh -Command,
+// subshells, $(…) and backticks, and after then/do/sudo/env-style prefixes).
 // Exit 2 = block, and stderr is shown to the agent.
 // Works with Claude Code (tool_input) and the Copilot harness (tool_input via the PreToolUse alias, or toolArgs),
-// which also reads the JSON deny decision printed to stdout.
+// which also reads the JSON deny decision printed to stdout. File names come from file_path/notebook_path (Claude Code),
+// filePath/replacements/patch text (VS Code), or path (Copilot CLI, including str_replace_editor's {command, path}).
 const fs = require("fs");
 const path = require("path");
 
@@ -47,8 +49,11 @@ function parse(cmd) {
       }
       word = (word ?? "") + s;
       i = j;
+    } else if (c === "\\" && /[();|&]/.test(cmd[i + 1] || "")) {
+      word = (word ?? "") + cmd[++i]; // \( \) \; are literal (find's grouping and -exec … \;); other \ stay, for Windows paths
     } else if (c !== "\n" && /\s/.test(c)) end();
-    else if (c === ";" || c === "|" || c === "&" || c === "\n") {
+    else if (c === ";" || c === "|" || c === "&" || c === "\n" || c === "(" || c === ")") {
+      // ( and ) also end a command: subshells "(rm x)", and "$(rm x)" (its "$" is left as a word on its own)
       if (c === "&" && redirect && word === null) continue; // the "&" of ">&"
       end();
       if (cmds[cmds.length - 1].length) cmds.push([]);
@@ -63,6 +68,12 @@ function parse(cmd) {
   return cmds.filter((c) => c.length);
 }
 
+// Shell keywords and command wrappers that run the command after them: "then rm x", "sudo rm x", "env A=1 rm x"
+const PREFIXES = new Set(["then", "do", "else", "elif", "if", "while", "until", "!", "{", "sudo", "doas", "env", "time",
+  "nohup", "command", "exec", "builtin", "nice", "stdbuf", "ionice", "chronic"]);
+// Their options that take a value as the next word (sudo -u bob, sudo -g grp, nice -n 10)
+const PREFIX_VALUE_FLAGS = /^-(u|g|C|U|p|h|r|t|D|R|n)$/;
+
 // The first project file (outside .agent-workflow/) a shell command would change, or null
 function shellTarget(command, cwd, inProject, depth = 0) {
   if (depth > 3) return null;
@@ -72,11 +83,29 @@ function shellTarget(command, cwd, inProject, depth = 0) {
     const p = process.platform === "win32" ? w.replace(/^\/([a-z])(\/|$)/i, "$1:/") : w; // Git Bash /c/... paths
     return inProject(path.resolve(base, p)) ? w : null;
   };
+  // Command substitutions run even inside double quotes ("$(rm x)", `rm x`), so check each one as a command of its own
+  for (const [, a, b] of command.matchAll(/\$\(([^()]*)\)|`([^`]*)`/g)) {
+    const hit = shellTarget(a ?? b, cwd, inProject, depth + 1);
+    if (hit) return hit;
+  }
   for (const words of parse(command)) {
     const args = words.filter((w) => typeof w === "string");
     for (const w of words) if (w.to && bad(w.to, cwd)) return w.to;
     let i = 0;
-    while (i < args.length && /^\w+=/.test(args[i])) i++; // VAR=value prefixes
+    // VAR=value prefixes, keywords and wrappers, and the wrappers' own options
+    for (let wrapped = false; i < args.length; i++) {
+      const w = args[i];
+      if (/^\w+=/.test(w)) continue;
+      if (PREFIXES.has(w.toLowerCase())) {
+        wrapped = true;
+        continue;
+      }
+      if (wrapped && w.startsWith("-")) {
+        if (PREFIX_VALUE_FLAGS.test(w)) i++;
+        continue;
+      }
+      break;
+    }
     const name = path.basename(args[i] || "").toLowerCase().replace(/\.exe$/, "");
     const rest = args.slice(i + 1);
     if (name === "cmd" && /^\/(c|k)$/i.test(rest[0] || "")) {
@@ -110,7 +139,7 @@ function shellTarget(command, cwd, inProject, depth = 0) {
       // GNU -i takes its value attached (-i{}), so only -I and the others skip a word
       while (j < rest.length && rest[j].startsWith("-")) j += /^-[InPLdEsa]$/.test(rest[j]) ? 2 : 1;
       const inner = path.basename(rest[j] || "").toLowerCase().replace(/\.exe$/, "");
-      const writes = WRITERS.has(inner) || ((inner === "sed" || inner === "perl") && rest.some((w) => /^-\w*i/.test(w)));
+      const writes = WRITERS.has(inner) || ((inner === "sed" || inner === "perl") && rest.some((w) => /^-\w*i/.test(w) || /^--in-place(=|$)/.test(w)));
       if (writes && inProject(cwd)) return `xargs ${inner}`;
       continue;
     }
@@ -131,7 +160,7 @@ function shellTarget(command, cwd, inProject, depth = 0) {
       }
     } else if (name === "patch" && !rest.includes("--dry-run") && inProject(cwd)) {
       return "patch";
-    } else if ((name === "sed" || name === "perl") && rest.some((w) => /^-\w*i/.test(w) || w === "--in-place")) {
+    } else if ((name === "sed" || name === "perl") && rest.some((w) => /^-\w*i/.test(w) || /^--in-place(=|$)/.test(w))) {
       // Files are the non-flag words, minus the script: the word after -e/-f, else the first one
       const files = rest.filter((w, k) => !w.startsWith("-") && !/^-\w*[ef]$/.test(rest[k - 1] || ""));
       if (!rest.some((w) => /^-\w*[ef]$/.test(w))) files.shift();
@@ -168,14 +197,26 @@ function main(data) {
     .filter((f) => DRAFT.test(fs.readFileSync(path.join(plansDir, f), "utf8").split(/^## /m)[0]));
   if (!drafts.length) return 0;
 
+  // Canonical form (links resolved, real casing, long names on Windows), through the nearest existing ancestor for a
+  // file that doesn't exist yet, so a path reached through a link or an 8.3 short name still counts as the same file
+  const canon = (p) => {
+    try {
+      return fs.realpathSync.native(p);
+    } catch {
+      const parent = path.dirname(p);
+      return parent === p ? p : path.join(canon(parent), path.basename(p));
+    }
+  };
   const inside = (dir, p) => {
     // macOS file systems are case-insensitive by default (path.relative already ignores case on Windows)
     const fold = (s) => (process.platform === "darwin" ? s.toLowerCase() : s);
-    const rel = path.relative(fold(dir), fold(p));
+    const rel = path.relative(fold(dir), fold(canon(p)));
     return !rel.startsWith("..") && !path.isAbsolute(rel);
   };
   // Only files in this project are gated, and the workflow's own folder (plans, standards) is always editable
-  const inProject = (abs) => inside(root, abs) && !inside(kitDir, abs);
+  const ROOT = canon(root);
+  const KIT_DIR = canon(kitDir);
+  const inProject = (abs) => inside(ROOT, abs) && !inside(KIT_DIR, abs);
   let input = data.tool_input ?? data.toolArgs ?? {};
   if (typeof input === "string") {
     try {
@@ -185,18 +226,22 @@ function main(data) {
     }
   }
   if (!input || typeof input !== "object") input = {};
+  // str_replace_editor's {command: "view", path} only reads
+  if (input.command === "view" && typeof input.path === "string") return 0;
   const gated = (f) => (typeof f === "string" && inProject(path.resolve(root, f)) ? f : null);
   let target = null;
+  // A shell tool's command. Editor tools can carry a `command` too (str_replace_editor: {command: "str_replace", path}),
+  // which parses as a harmless shell command, so the file checks below still run when nothing was found here.
   if (typeof input.command === "string") target = shellTarget(input.command, typeof data.cwd === "string" ? data.cwd : root, inProject);
-  else if (Array.isArray(input.replacements)) {
+  if (!target && Array.isArray(input.replacements)) {
     target = input.replacements.map((r) => gated(r && r.filePath)).find(Boolean); // VS Code multi_replace_string_in_file
-  } else if (typeof input.input === "string" && /^\*\*\* Begin Patch/m.test(input.input)) {
+  }
+  if (!target && typeof input.input === "string" && /^\*\*\* Begin Patch/m.test(input.input)) {
     // VS Code apply_patch: the files are named inside the patch text
     for (const m of input.input.matchAll(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/gm)) if ((target = gated(m[1].trim()))) break;
-  } else {
-    // file_path/notebook_path: Claude Code; filePath: VS Code tools; path: Copilot CLI tools
-    target = gated(input.file_path || input.notebook_path || input.filePath || input.path);
   }
+  // file_path/notebook_path: Claude Code; filePath: VS Code tools; path: Copilot CLI tools
+  if (!target) target = gated(input.file_path || input.notebook_path || input.filePath || input.path);
   if (!target) return 0;
 
   const reason =
